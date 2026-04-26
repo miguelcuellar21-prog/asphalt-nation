@@ -289,13 +289,13 @@ const POWERUP_ICONS = {nitro:'🔥',shield:'🛡️',slow:'⏱️'};
 
 const US_STATES = [
   // ── West Coast ──
-  {name:'California',    env:'desert',  scenery:'california', fog:0.013, fogColor:0x3a1a06, sky:0x1c0e08, ground:0x8a5a2a, accent:0xff7722, sunColor:0xff9944, skyTop:0x180c06, skyBot:0x6a3810,
+  {name:'California',    env:'desert',  scenery:'california', fog:0.013, fogColor:0x181008, sky:0x1c0e08, ground:0x8a5a2a, accent:0xff7722, sunColor:0xff9944, skyTop:0x180c06, skyBot:0x6a3810,
    tagline:'THE GOLDEN STATE', mountainColor:0x7a4020, mountainZ:-210,
    weather:'clear', hazardStrength:0.0},
-  {name:'Nevada',        env:'desert',  scenery:'nevada',     fog:0.011, fogColor:0x3c1e08, sky:0x1e1008, ground:0x9a6a30, accent:0xff6600, sunColor:0xffaa44, skyTop:0x1c0c06, skyBot:0x7a4a14,
+  {name:'Nevada',        env:'desert',  scenery:'nevada',     fog:0.011, fogColor:0x1a1008, sky:0x1e1008, ground:0x9a6a30, accent:0xff6600, sunColor:0xffaa44, skyTop:0x1c0c06, skyBot:0x7a4a14,
    tagline:'THE SILVER STATE', mountainColor:0x8a5030, mountainZ:-220,
    weather:'sandstorm', hazardStrength:0.65},
-  {name:'Arizona',       env:'desert',  scenery:'arizona',    fog:0.013, fogColor:0x4a2206, sky:0x200e08, ground:0xb05a20, accent:0xff5500, sunColor:0xff8833, skyTop:0x1a0808, skyBot:0x8a4010,
+  {name:'Arizona',       env:'desert',  scenery:'arizona',    fog:0.013, fogColor:0x200e04, sky:0x200e08, ground:0xb05a20, accent:0xff5500, sunColor:0xff8833, skyTop:0x1a0808, skyBot:0x8a4010,
    tagline:'THE GRAND CANYON STATE', mountainColor:0x6a3010, mountainZ:-200,
    weather:'sandstorm', hazardStrength:0.65},
   {name:'New Mexico',    env:'mesa',    scenery:'newmexico',  fog:0.011, fogColor:0x3a2010, sky:0x1c1008, ground:0xa06030, accent:0xff7733, sunColor:0xff9944, skyTop:0x180a08, skyBot:0x6a3410,
@@ -464,7 +464,7 @@ renderer.setPixelRatio(QUALITY.pixelRatio);
 renderer.shadowMap.enabled = QUALITY.shadowMap;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = _qualityTier === 'low' ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
+renderer.toneMappingExposure = 0.85;  // reduced to minimize warm cast from ACESFilmic
 renderer.outputEncoding = THREE.sRGBEncoding || 3001;
 renderer.physicallyCorrectLights = QUALITY.physicallyCorrect;
 
@@ -510,7 +510,7 @@ camera.lookAt(0, 0.0, -14);
 // ─── LIGHTS ───
 const ambient = new THREE.AmbientLight(0xffffff, 0.35);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffa060, 1.8);
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);  // neutral white sun — warm color was causing brown road bleed
 sun.position.set(12, 28, 14);
 sun.castShadow = true;
 sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
@@ -521,7 +521,7 @@ sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
 sun.shadow.bias = -0.0003;
 scene.add(sun);
 // Hemisphere sky/ground bounce
-const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x443322, 0.6);
+const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x222222, 0.5);  // neutral dark ground bounce — was 0x443322 (warm brown bleeding up)
 scene.add(hemiLight);
 // Rim light — strong separation from behind
 const rimLight = new THREE.DirectionalLight(0x4466aa, 1.1); // cooler blue rim
@@ -783,7 +783,7 @@ function tickDayNight(dt){
     sun.intensity = c.sunI;
     // Warm sunrise/sunset tint
     const noonB = Math.sin((_dayTime-0.25)/0.5*Math.PI);
-    sun.color.setRGB(1.0, 0.55+0.45*noonB, 0.1+0.85*noonB);
+    sun.color.setRGB(1.0, 0.90+0.10*noonB, 0.80+0.18*noonB);  // near-white always; slight warmth at noon onlym-white not orange
     ambient.intensity = 0.08 + 0.27*Math.sin((_dayTime-0.25)/0.5*Math.PI);
   } else {
     sun.intensity = 0.04;
@@ -996,7 +996,7 @@ const wetRoadMat = new THREE.MeshPhysicalMaterial({
   color:0x18202c, map:asphaltTex,
   roughness:0.08, metalness:0.20,
   clearcoat:1.0, clearcoatRoughness:0.04,
-  envMapIntensity:2.8,
+  envMapIntensity:0.0,  // zero = no env color bleed on wet road
   reflectivity:0.95
 });
 
@@ -3032,7 +3032,7 @@ function buildSand(){
   }
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
   const mat = new THREE.PointsMaterial({
-    color:0xd4a55a, size:0.30, transparent:true, opacity:0.55,
+    color:0xc8b898, size:0.25, transparent:true, opacity:0.35,  // gray-dust sand — was 0xd4a55a golden
     sizeAttenuation:true, depthWrite:false
   });
   sandSystem = new THREE.Points(geo, mat);
@@ -3154,10 +3154,10 @@ function activateWeather(type, strength){
     setWeatherVeil('rgba(220,235,255,0.08)', 0.08);
   } else if(type==='sandstorm'){
     if(sandSystem) sandSystem.visible = true;
-    setWeatherVeil('rgba(180,100,20,0.35)', 0.35);
+    setWeatherVeil('rgba(140,120,90,0.18)', 0.18);  // subtle dust haze — was rgba(180,100,20,0.35) too orange
   } else if(type==='tumbleweed'){
     if(sandSystem){ sandSystem.visible=true; sandSystem.material.opacity=0.25; }
-    setWeatherVeil('rgba(150,90,20,0.12)', 0.12);
+    setWeatherVeil('rgba(130,115,90,0.08)', 0.08);  // very subtle dust tint
     // Spawn tumbleweeds
     tumbleweeds.forEach((t,i)=>{
       t.active = true;
@@ -3723,8 +3723,11 @@ function applyEnvironment(idx){
   const st=US_STATES[idx];
   startEnvLerp(st);
   scene.fog.density=st.fog;
-  renderer.setClearColor(st.sky,1);
-  groundMat.color.setHex(st.ground);
+  // Ground color: use neutral dark for desert/mesa states (warm browns cause visible bleed near camera)
+  const isWarmBiome = st.env==='desert' || st.env==='mesa';
+  const groundHex = isWarmBiome ? 0x1a1612 : st.ground;  // dark near-neutral for desert, real color for green/wet states
+  groundMat.color.setHex(groundHex);
+  renderer.setClearColor(isWarmBiome ? 0x0a0808 : st.sky, 1);  // neutral dark for desert — st.sky was warm brown
 
   // Swap mountain silhouette per state
   if(mountainGroup){ scene.remove(mountainGroup); mountainGroup=null; }
@@ -3800,16 +3803,16 @@ function applyEnvironment(idx){
     fillLight.intensity=0.25; fillLight.color.setHex(0x334466);
     rimLight.intensity=0.4;
   } else if(st.env==='desert'){
-    sun.intensity=2.0; ambient.intensity=0.55; sun.color.setHex(st.sunColor||0xff9944);
-    hemiLight.color.setHex(0xbbccdd); hemiLight.groundColor.setHex(0x7a4818); hemiLight.intensity=0.65;
+    sun.intensity=1.5; ambient.intensity=0.45; sun.color.setHex(0xffffff);  // neutral white for desert — orange was baking brown into road
+    hemiLight.color.setHex(0xbbccdd); hemiLight.groundColor.setHex(0x2a2416); hemiLight.intensity=0.50;  // neutral dark ground — was 0x7a4818 warm, intensity reduced
     headlight.intensity=0.5; headlight.distance=30; headlight.color.setHex(0xfff8ee);
-    fillLight.intensity=0.6; fillLight.color.setHex(0xff8833);
+    fillLight.intensity=0.25; fillLight.color.setHex(0xaabbcc);  // neutral fill — was 0xff8833 orange
     rimLight.intensity=0.7;
   } else {
-    sun.intensity=1.6; ambient.intensity=0.45; sun.color.setHex(st.sunColor||0xffa060);
-    hemiLight.color.setHex(0x88aacc); hemiLight.groundColor.setHex(0x334422); hemiLight.intensity=0.55;
+    sun.intensity=1.6; ambient.intensity=0.45; sun.color.setHex(0xffffff);  // neutral white
+    hemiLight.color.setHex(0x88aacc); hemiLight.groundColor.setHex(0x222222);  // neutral hemiLight.intensity=0.55;
     headlight.intensity=0.8; headlight.distance=40; headlight.color.setHex(0xfff8ee);
-    fillLight.intensity=0.45; fillLight.color.setHex(st.accent||0xff8833);
+    fillLight.intensity=0.30; fillLight.color.setHex(0x8899bb);  // neutral cool fill — was st.accent (could be orange)
     rimLight.intensity=0.55;
   }
 
@@ -3818,8 +3821,8 @@ function applyEnvironment(idx){
   const wstrength = st.hazardStrength || 0;
   activateWeather(wtype, wstrength);
 
-  // Ground
-  groundMat.color.setHex(st.ground);
+  // Ground — use neutral for desert/mesa (already set above, this was the override bug!)
+  groundMat.color.setHex(isWarmBiome ? 0x1a1612 : st.ground);  // neutral for desert — was always st.ground
 
   document.getElementById('state-hud').textContent=st.name.toUpperCase();
 }
