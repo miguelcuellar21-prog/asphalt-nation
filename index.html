@@ -2638,7 +2638,7 @@ function update(dt){
   updateRainParticles(dt);
   tickEnvLerp(dt);
   // Update engine pitch every frame
-  const _spMax=ROAD_Z_SPEED_BASE*2.8*(CAR_CONFIGS[SAVE.selectedCar]?.speed||1);
+  const _spMax=ROAD_Z_SPEED_BASE*2.8*(getCarDef().speed||1);
   const _spNorm=Math.min(1,G.speed/_spMax);
   const _nitroOn=G.activePowerups.nitro>0;
   SFX.updateEngine(_spNorm, _nitroOn);
