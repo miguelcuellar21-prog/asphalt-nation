@@ -220,7 +220,8 @@
   <div id="gt">GARAGE</div>
   <div id="gc">🪙 <span id="cc2">0</span></div>
   <div id="cg"></div>
-  <button class="btn" onclick="closeGarage()" style="margin-top:20px">BACK</button>
+  <button class="btn" onclick="startGame()" style="margin-top:16px">▶ &nbsp;RACE NOW</button>
+  <button class="btn sec" onclick="closeGarage()" style="margin-top:8px">BACK</button>
 </div>
 
 <!-- GAME OVER -->
@@ -1067,12 +1068,12 @@ function buildRoadSegment(){
     sh.rotation.x=-Math.PI/2; sh.position.set(sx,0.001,0); sh.receiveShadow=true;
     grp.add(sh);
   }
-  // Rumble strips (orange/red alternating)
+  // Rumble strips — subtle concrete gray, no colour pop
   for(const sx of [-ROAD_HALF+0.18, ROAD_HALF-0.18]){
     for(let r=0;r<12;r++){
-      const rumble=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.04,1.0),
-        new THREE.MeshStandardMaterial({color:r%2===0?0xff6600:0xdd4400,roughness:0.7}));
-      rumble.position.set(sx,0.022,-SEGMENT_LEN/2+r*(SEGMENT_LEN/12)+SEGMENT_LEN/24);
+      const rumble=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.03,0.90),
+        new THREE.MeshStandardMaterial({color:r%2===0?0x888888:0x707070,roughness:0.85,metalness:0.05}));
+      rumble.position.set(sx,0.018,-SEGMENT_LEN/2+r*(SEGMENT_LEN/12)+SEGMENT_LEN/24);
       grp.add(rumble);
     }
   }
@@ -1233,36 +1234,83 @@ function buildCar(colorHex, accentHex, scale=1){
     envMapIntensity: 1.8,
   });
 
-  // ── LOWER BODY — CapsuleGeometry pill along Z gives perfectly smooth curved sides ──
-  // CapsuleGeometry(radius, length, capSeg, radSeg) — r155 supported
+  // ═══ WEDGE SUPERCAR BODY ═══
+  // Lower body slab: wide flat main hull — beveled box (wider than tall)
   const lowerBody = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.44*s, 3.00*s, 12, 20),
+    new THREE.CapsuleGeometry(0.36*s, 3.20*s, 14, 24),
     bodyMat()
   );
-  lowerBody.rotation.x = Math.PI/2; // orient along Z (car length)
-  lowerBody.scale.set(2.18, 1.0, 1.0); // widen laterally for car width
-  lowerBody.position.set(0, 0.44*s, 0);
+  lowerBody.rotation.x = Math.PI/2;
+  lowerBody.scale.set(2.30, 0.72, 1.0);  // very wide, low flat profile
+  lowerBody.position.set(0, 0.36*s, -0.10*s);
   lowerBody.castShadow = true;
   grp.add(lowerBody);
 
+  // Nose wedge — tapers to a sharp front point
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.50*s, 0.90*s, 12, 1),
+    bodyMat()
+  );
+  nose.rotation.x = Math.PI/2;
+  nose.scale.set(2.28, 1.0, 1.0);
+  nose.position.set(0, 0.34*s, 1.85*s);
+  nose.castShadow = true;
+  grp.add(nose);
+
+  // Rear haunches — wider flared hips
+  for(const sx of [-1.08*s, 1.08*s]){
+    const haunch = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.30*s, 1.10*s, 10, 16),
+      bodyMat()
+    );
+    haunch.rotation.x = Math.PI/2;
+    haunch.scale.set(0.85, 1.20, 1.0);
+    haunch.position.set(sx, 0.46*s, -0.80*s);
+    haunch.castShadow = true;
+    grp.add(haunch);
+  }
+
   // Flat belly plate (bottom underbody close out)
   const belly = new THREE.Mesh(
-    new THREE.BoxGeometry(1.80*s, 0.06*s, 3.80*s),
+    new THREE.BoxGeometry(1.90*s, 0.06*s, 3.90*s),
     new THREE.MeshStandardMaterial({color:0x0a0a0a, roughness:0.95, metalness:0.1})
   );
-  belly.position.set(0, 0.06*s, 0);
+  belly.position.set(0, 0.04*s, -0.10*s);
   grp.add(belly);
 
-  // ── UPPER CABIN — narrower capsule, same bodyMat for seamless paint flow ──
+  // ── UPPER CABIN — bubble greenhouse, low & rearward ──
   const cabin = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.36*s, 1.40*s, 12, 20),
-    bodyMat()   // same clearcoat paint as lower body
+    new THREE.CapsuleGeometry(0.32*s, 1.10*s, 12, 20),
+    bodyMat()
   );
   cabin.rotation.x = Math.PI/2;
-  cabin.scale.set(1.78, 1.0, 1.0);
-  cabin.position.set(0, 0.90*s, -0.12*s);
+  cabin.scale.set(1.60, 0.90, 1.0);  // narrow, flat roofline
+  cabin.position.set(0, 0.84*s, -0.22*s);
   cabin.castShadow = true;
   grp.add(cabin);
+
+  // Accent lightning-bolt side stripe
+  for(const sx of [-1.04*s, 1.04*s]){
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04*s, 0.055*s, 2.60*s),
+      new THREE.MeshStandardMaterial({
+        color: accentHex,
+        emissive: accentC.clone().multiplyScalar(0.35),
+        emissiveIntensity: 1.0,
+        roughness: 0.20, metalness: 0.60,
+      })
+    );
+    stripe.position.set(sx, 0.54*s, -0.02*s);
+    grp.add(stripe);
+    // Break stripe with a diagonal kink
+    const kink = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04*s, 0.055*s, 0.38*s),
+      new THREE.MeshStandardMaterial({color:accentHex, roughness:0.20, metalness:0.60})
+    );
+    kink.rotation.z = sx > 0 ? -0.28 : 0.28;
+    kink.position.set(sx + (sx>0?-0.06:0.06)*s, 0.62*s, 0.42*s);
+    grp.add(kink);
+  }
 
   // ── ROOF INTAKE SCOOP — aerodynamic spine ──
   const scoop = new THREE.Mesh(
@@ -1543,14 +1591,19 @@ function buildCar(colorHex, accentHex, scale=1){
     grp.add(brkDot);
   }
 
-  // ── SPOILER ──
-  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.08*s, 0.38*s), accentMat());
-  spoiler.position.set(0, 1.14*s, -0.96*s);
+  // ── DOUBLE-BLADE REAR WING ──
+  // Main upper blade
+  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.68*s, 0.07*s, 0.42*s), accentMat());
+  spoiler.position.set(0, 1.22*s, -1.04*s);
   grp.add(spoiler);
-  for(const sx of [-0.80*s, 0.80*s]){
-    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.08*s, 0.20*s, 0.38*s),
-      new THREE.MeshStandardMaterial({color:accentC.clone().multiplyScalar(0.72).getHex(), roughness:0.35}));
-    ep.position.set(sx, 1.08*s, -0.96*s);
+  // Lower blade (GT-style gurney)
+  const spoiler2 = new THREE.Mesh(new THREE.BoxGeometry(1.52*s, 0.05*s, 0.30*s), carbonMat());
+  spoiler2.position.set(0, 1.08*s, -1.01*s);
+  grp.add(spoiler2);
+  // Blade mount endplates
+  for(const sx of [-0.84*s, 0.84*s]){
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.30*s, 0.45*s), carbonMat());
+    ep.position.set(sx, 1.10*s, -1.02*s);
     grp.add(ep);
     const up = new THREE.Mesh(new THREE.CylinderGeometry(0.030*s, 0.030*s, 0.26*s, 6),
       new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.84, roughness:0.18}));
@@ -3850,10 +3903,9 @@ function switchLane(d){
   G.playerX=G.playerTargetX;
   SFX.screech();
   _updateLaneDots();
-  // Camera lean: roll toward turn direction + FOV pulse
-  _camLeanTarget = -d * 0.18;  // ~10 degrees
-  _camFOVTarget  = _CAM_FOV_BASE + 5;
-  setTimeout(()=>{ _camLeanTarget=0; _camFOVTarget=_CAM_FOV_BASE; }, 380);
+  // FOV pulse on lane change (subtle speed feel, no screen tilt)
+  _camFOVTarget  = _CAM_FOV_BASE + 4;
+  setTimeout(()=>{ _camFOVTarget=_CAM_FOV_BASE; }, 320);
 }
 function _updateLaneDots(){
   for(let i=0;i<LANE_COUNT;i++){
@@ -4054,14 +4106,13 @@ function update(dt){
   playerMesh.rotation.z=-(G.playerTargetX-G.playerX)*0.08;
   camera.position.x+=(G.playerX*0.25-camera.position.x)*Math.min(1,3*dt);
 
-  // Camera lean (roll on lane change) + FOV pulse
-  _camLean += (_camLeanTarget - _camLean) * Math.min(1, 12*dt);
+  // FOV pulse on lane change (no camera roll — avoids screen tilt)
   _camFOV  += (_camFOVTarget  - _camFOV)  * Math.min(1, 10*dt);
-  camera.rotation.z = _camLean;
   if(Math.abs(_camFOV - camera.fov) > 0.05){
     camera.fov = _camFOV;
     camera.updateProjectionMatrix();
   }
+  camera.rotation.z = 0; // always keep horizon level
 
   // Move sky with camera (fixed on horizon)
   skyMesh.position.x = camera.position.x;
@@ -4274,7 +4325,15 @@ function rr(ctx,x,y,w,h,r){
   ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
 }
 function onCarClick(car,unlocked){
-  if(unlocked){ SAVE.selectedCar=car.id; renderGarage(); }
+  if(unlocked){
+    SAVE.selectedCar=car.id;
+    renderGarage();
+    // Flash the RACE NOW button to show the car change registered
+    const raceBtn=document.querySelector('#gs .btn');
+    if(raceBtn){ raceBtn.style.background='linear-gradient(135deg,#ffcc00,#ff8800)';
+      raceBtn.style.color='#06040e';
+      setTimeout(()=>{ raceBtn.style.background=''; raceBtn.style.color=''; }, 600); }
+  }
   else if(SAVE.coins>=car.price){ SAVE.coins-=car.price; SAVE.unlockedCars.push(car.id); SAVE.selectedCar=car.id; renderGarage(); }
   else { const el=document.getElementById('gc'); el.style.color='#ff4444'; setTimeout(()=>el.style.color='',700); }
 }
