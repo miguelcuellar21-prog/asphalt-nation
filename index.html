@@ -972,13 +972,11 @@ const asphaltRoughTex = (function makeAsphaltRoughness(){
 const roadMat = new THREE.MeshPhysicalMaterial({
   color: 0x141418,
   map: asphaltTex,
-  // No roughnessMap — it tiles differently and creates visible banding
-  roughness: 0.82,
-  metalness: 0.04,
-  clearcoat: 0.10,
-  clearcoatRoughness: 0.55,
-  envMapIntensity: 0.60,
-  reflectivity: 0.2,
+  roughness: 0.88,
+  metalness: 0.0,
+  clearcoat: 0.0,       // no clearcoat = no env map reflections on road
+  envMapIntensity: 0.0, // zero = environment colors cannot bleed onto road
+  reflectivity: 0.0,
 });
 const shoulderMat = new THREE.MeshPhysicalMaterial({
   color: 0x1a1a1e,  // dark asphalt-gray shoulder — no tan/brown
