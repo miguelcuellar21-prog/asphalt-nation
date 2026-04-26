@@ -157,7 +157,7 @@
   <div id="hud-top">
     <div class="hp"><div class="hl">Miles</div><div class="hv gold" id="hm">0</div></div>
     <div class="hp" style="text-align:center"><div class="hl">Score</div><div class="hv" id="hs2">0</div></div>
-    <div class="hp" style="text-align:right"><div class="hl" style="display:flex;align-items:center;justify-content:flex-end;gap:6px">Lives <button id="mutebtn" onclick="const on=SFX.toggle();this.textContent=on?' 🔊':' 🔇';" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;padding:0;line-height:1;"> 🔊</button><button id="tiltbtn" onclick="toggleTiltMotion(this);" style="background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.22);border-radius:4px;color:rgba(255,255,255,0.75);font-size:10px;font-weight:700;letter-spacing:0.5px;cursor:pointer;padding:2px 5px;line-height:1.4;">TILT:ON</button></div><div id="lives-row"></div></div>
+    <div class="hp" style="text-align:right"><div class="hl" style="display:flex;align-items:center;justify-content:flex-end;gap:6px">Lives <button id="mutebtn" onclick="const on=SFX.toggle();this.textContent=on?' 🔊':' 🔇';" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;padding:0;line-height:1;"> 🔊</button><button id="tiltbtn" style="background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.22);border-radius:4px;color:rgba(255,255,255,0.75);font-size:10px;font-weight:700;letter-spacing:0.5px;cursor:pointer;padding:6px 8px;line-height:1.4;min-height:36px;min-width:60px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(255,255,255,0.2);">TILT:ON</button></div><div id="lives-row"></div></div>
   </div>
   <div id="state-hud"></div>
   <div id="speedbar"><div id="speedfill" style="height:25%"></div></div>
@@ -2709,13 +2709,25 @@ function _doLane(dir){
   }
 }
 
+// Helper: returns true if the touch started on a button/input (should not be swipe-handled)
+function _touchOnUI(e){
+  const t = e.target || e.srcElement;
+  if(!t) return false;
+  const tag = t.tagName ? t.tagName.toUpperCase() : '';
+  if(tag==='BUTTON'||tag==='INPUT'||tag==='SELECT'||tag==='A') return true;
+  if(t.closest && t.closest('button,input,a,[data-ui]')) return true;
+  return false;
+}
+
 document.addEventListener('touchstart',e=>{
+  if(_touchOnUI(e)) return; // let buttons receive the event
   _tx0=e.touches[0].clientX;
   _ty0=e.touches[0].clientY;
   _tt0=Date.now();
 },{passive:true});
 
 document.addEventListener('touchend',e=>{
+  if(_touchOnUI(e)) return; // let buttons handle their own taps
   const dx=e.changedTouches[0].clientX-_tx0;
   const dy=e.changedTouches[0].clientY-_ty0;
   const dt=Date.now()-_tt0;
@@ -2755,6 +2767,25 @@ function toggleTiltMotion(btn){
 
 const tiltDot = document.getElementById('tilt-dot');
 const tiltBar = document.getElementById('tilt-bar');
+
+// Wire tilt button via touchend (more reliable than onclick on mobile Safari)
+// Use a flag to prevent the synthetic click that follows touchend from double-firing
+(function(){
+  const tb = document.getElementById('tiltbtn');
+  if(!tb) return;
+  let _touchFired = false;
+  tb.addEventListener('touchend', function(e){
+    e.preventDefault();   // stop synthetic click
+    e.stopPropagation();  // stop swipe handler
+    _touchFired = true;
+    toggleTiltMotion(tb);
+    setTimeout(()=>{ _touchFired=false; }, 400);
+  }, {passive:false});
+  tb.addEventListener('click', function(){
+    if(_touchFired){ _touchFired=false; return; } // skip synthetic click
+    toggleTiltMotion(tb);
+  });
+})();
 
 function _applyTilt(gamma){
   if(gamePhase!=='playing') return;
