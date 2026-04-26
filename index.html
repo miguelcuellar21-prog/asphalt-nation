@@ -1016,15 +1016,15 @@ const asphaltRoughTex = (function makeAsphaltRoughness(){
 
 // Road — full PBR asphalt with wet-sheen clearcoat
 const roadMat = new THREE.MeshPhysicalMaterial({
-  color: 0x191921,
+  color: 0x141418,
   map: asphaltTex,
-  roughnessMap: asphaltRoughTex,
-  roughness: 0.78,
-  metalness: 0.06,
-  clearcoat: 0.14,            // stronger wet-road sheen
-  clearcoatRoughness: 0.48,   // semi-polished puddles
-  envMapIntensity: 0.85,      // picks up headlights in reflections
-  reflectivity: 0.3,
+  // No roughnessMap — it tiles differently and creates visible banding
+  roughness: 0.82,
+  metalness: 0.04,
+  clearcoat: 0.10,
+  clearcoatRoughness: 0.55,
+  envMapIntensity: 0.60,
+  reflectivity: 0.2,
 });
 const shoulderMat = new THREE.MeshPhysicalMaterial({
   color: 0xc4b896,
@@ -3506,15 +3506,7 @@ function _doLane(dir){
   if(gamePhase!=='playing') return;
   if(dir<0 && G.playerLane>0) switchLane(-1);
   if(dir>0 && G.playerLane<LANE_COUNT-1) switchLane(1);
-  // flash edge with stronger directional glow
-  const fl=document.getElementById('swipe-flash');
-  if(fl){
-    fl.style.background=dir<0
-      ?'linear-gradient(90deg,rgba(255,204,0,0.22) 0%,rgba(255,204,0,0.06) 40%,transparent 100%)'
-      :'linear-gradient(270deg,rgba(255,204,0,0.22) 0%,rgba(255,204,0,0.06) 40%,transparent 100%)';
-    fl.style.opacity='1';
-    setTimeout(()=>fl.style.opacity='0',160);
-  }
+  // (swipe flash removed — no screen overlay on lane change)
 }
 
 // Helper: returns true if the touch started on a button/input (should not be swipe-handled)
