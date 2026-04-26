@@ -1032,9 +1032,9 @@ const shoulderMat = new THREE.MeshPhysicalMaterial({
   metalness: 0.0,
   clearcoat: 0.03,  // barely any sheen — crumbled asphalt texture
 });
-// Lane lines — bright with stronger emissive so they glow at night
-const lineMat = new THREE.MeshStandardMaterial({color:0xffee00, roughness:0.2, emissive:new THREE.Color(0xffdd00), emissiveIntensity:3.5});
-const edgeLineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.2, emissive:new THREE.Color(0xffffff), emissiveIntensity:1.2});
+// Lane lines — white dashed, subtle glow (not orange/gold)
+const lineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.35, emissive:new THREE.Color(0xffffff), emissiveIntensity:0.6});
+const edgeLineMat = new THREE.MeshStandardMaterial({color:0xeeeeee, roughness:0.35, emissive:new THREE.Color(0xdddddd), emissiveIntensity:0.4});
 const groundMat = new THREE.MeshPhysicalMaterial({
   color: 0x3d1f06,
   roughness: 1.0,
@@ -1068,14 +1068,14 @@ function buildRoadSegment(){
     sh.rotation.x=-Math.PI/2; sh.position.set(sx,0.001,0); sh.receiveShadow=true;
     grp.add(sh);
   }
-  // Rumble strips — subtle concrete gray, no colour pop
-  for(const sx of [-ROAD_HALF+0.18, ROAD_HALF-0.18]){
-    for(let r=0;r<12;r++){
-      const rumble=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.03,0.90),
-        new THREE.MeshStandardMaterial({color:r%2===0?0x888888:0x707070,roughness:0.85,metalness:0.05}));
-      rumble.position.set(sx,0.018,-SEGMENT_LEN/2+r*(SEGMENT_LEN/12)+SEGMENT_LEN/24);
-      grp.add(rumble);
-    }
+  // Rumble strips — only on road edges, very subtle raised concrete
+  for(const sx of [-ROAD_HALF+0.22, ROAD_HALF-0.22]){
+    const rumblePlane=new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.015, SEGMENT_LEN),
+      new THREE.MeshStandardMaterial({color:0x787878, roughness:0.90, metalness:0.0})
+    );
+    rumblePlane.position.set(sx, 0.016, 0);
+    grp.add(rumblePlane);
   }
   // Guardrail posts (every 8m)
   const postMat=new THREE.MeshStandardMaterial({color:0x778888,metalness:0.65,roughness:0.4});
@@ -1103,12 +1103,12 @@ function buildRoadSegment(){
       grp.add(post);
     }
   }
-  // Lane dashes (brighter, emissive glow)
+  // Lane dashes — white, standard highway spacing
   for(let l=1;l<LANE_COUNT;l++){
     const lx=-ROAD_HALF+l*LANE_WIDTH;
-    const dashes=7;
+    const dashes=5;
     for(let d=0;d<dashes;d++){
-      const ln=new THREE.Mesh(new THREE.PlaneGeometry(0.24, 3.2), lineMat);
+      const ln=new THREE.Mesh(new THREE.PlaneGeometry(0.20, 2.4), lineMat);
       ln.rotation.x=-Math.PI/2;
       ln.position.set(lx, 0.005, (-SEGMENT_LEN/2)+(d+0.5)*(SEGMENT_LEN/dashes));
       grp.add(ln);
