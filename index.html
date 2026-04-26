@@ -908,86 +908,41 @@ function makeBox(w,h,d,color,options={}){
 // ─── ROAD ───
 // Asphalt texture via canvas
 function makeAsphaltTexture(){
-  const size=1024;  // 2x resolution — richer detail on mobile retina
+  const size=512;
   const cv=document.createElement('canvas'); cv.width=size; cv.height=size;
   const ctx=cv.getContext('2d');
-  // Rich dark asphalt base with slight blue-black sheen
-  ctx.fillStyle='#0f0f16';
+  // Pure neutral dark gray base — no warm/blue tint that ACESFilmic shifts brown
+  ctx.fillStyle='#181818';
   ctx.fillRect(0,0,size,size);
-  // Aggregate scatter — dense multi-size gravel particles
-  for(let i=0;i<48000;i++){
+  // Fine gray gravel noise — strictly neutral gray, no color channel offset
+  for(let i=0;i<28000;i++){
     const x=Math.random()*size, y=Math.random()*size;
-    const br=Math.floor(Math.random()*38+6);
-    const sz=Math.random()<0.06?3:Math.random()<0.18?2:1;
-    const alpha=0.45+Math.random()*0.55;
-    ctx.fillStyle=`rgba(${br},${br},${br+4},${alpha})`;
-    if(sz===1) ctx.fillRect(x,y,1,1);
-    else { ctx.beginPath(); ctx.arc(x,y,sz*0.6,0,Math.PI*2); ctx.fill(); }
+    const v=Math.floor(Math.random()*44+8); // gray 8–52
+    const alpha=0.35+Math.random()*0.5;
+    ctx.fillStyle=`rgba(${v},${v},${v},${alpha})`;
+    if(Math.random()<0.15){
+      ctx.beginPath(); ctx.arc(x,y,Math.random()*1.2+0.4,0,Math.PI*2); ctx.fill();
+    } else {
+      ctx.fillRect(x,y,1,1);
+    }
   }
-  // Larger aggregate chunks (embedded stones)
-  for(let i=0;i<180;i++){
-    const x=Math.random()*size, y=Math.random()*size;
-    const r=1.2+Math.random()*2.2;
-    const br=Math.floor(Math.random()*22+18);
-    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
-    ctx.fillStyle=`rgba(${br},${br+2},${br+6},0.7)`; ctx.fill();
-    // highlight edge
-    ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.3,r*0.4,0,Math.PI*2);
-    ctx.fillStyle=`rgba(80,84,90,0.4)`; ctx.fill();
-  }
-  // Crack network — branching cracks
-  for(let c=0;c<12;c++){
-    ctx.save();
-    ctx.strokeStyle=`rgba(0,0,0,${0.35+Math.random()*0.3})`;
-    ctx.lineWidth=0.8+Math.random()*0.6;
+  // Subtle cracks — pure black only
+  for(let c=0;c<8;c++){
+    ctx.strokeStyle=`rgba(0,0,0,${0.25+Math.random()*0.2})`;
+    ctx.lineWidth=0.7;
     ctx.beginPath();
     let cx=Math.random()*size, cy=Math.random()*size;
     ctx.moveTo(cx,cy);
-    const segs=4+Math.floor(Math.random()*5);
-    for(let s=0;s<segs;s++){
-      cx+=(Math.random()-0.5)*38; cy+=(Math.random()-0.5)*38;
+    for(let s=0;s<5;s++){
+      cx+=(Math.random()-0.5)*30; cy+=(Math.random()-0.5)*30;
       ctx.lineTo(cx,cy);
-      // branch
-      if(Math.random()<0.4){
-        ctx.save(); ctx.strokeStyle=`rgba(0,0,0,${0.2+Math.random()*0.2})`;
-        ctx.lineWidth=0.5;
-        ctx.beginPath(); ctx.moveTo(cx,cy);
-        ctx.lineTo(cx+(Math.random()-0.5)*22, cy+(Math.random()-0.5)*22);
-        ctx.stroke(); ctx.restore();
-      }
     }
-    ctx.stroke(); ctx.restore();
+    ctx.stroke();
   }
-  // Tire track marks (subtle dark bands, pure black — no color tint)
-  for(let t=0;t<4;t++){
-    const x=55+t*135;
-    const grd=ctx.createLinearGradient(x-14,0,x+14,0);
-    grd.addColorStop(0,'rgba(0,0,0,0)');
-    grd.addColorStop(0.3,'rgba(0,0,0,0.22)');
-    grd.addColorStop(0.7,'rgba(0,0,0,0.22)');
-    grd.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=grd;
-    ctx.fillRect(x-14,0,28,size);
-  }
-  // Oil stain patches
-  for(let o=0;o<6;o++){
-    const ox=Math.random()*size, oy=Math.random()*size;
-    const rg=ctx.createRadialGradient(ox,oy,0,ox,oy,18+Math.random()*22);
-    rg.addColorStop(0,'rgba(20,22,40,0.35)');
-    rg.addColorStop(0.5,'rgba(10,14,28,0.18)');
-    rg.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=rg; ctx.fillRect(ox-40,oy-40,80,80);
-  }
-  // Center-road subtle light scatter (wet look)
-  const radGrd=ctx.createRadialGradient(size/2,size*0.1,0,size/2,size*0.1,size*0.55);
-  radGrd.addColorStop(0,'rgba(255,255,255,0.055)');
-  radGrd.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=radGrd; ctx.fillRect(0,0,size,size);
-
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(3, 14);  // slightly wider tiles for better proportion
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();  // max sharpness at grazing angles
+  tex.repeat.set(2, 6);  // fewer tiles = no visible seam banding
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
 }
 
