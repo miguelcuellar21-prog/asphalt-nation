@@ -99,6 +99,12 @@
     #scbig{font-family:'Orbitron',monospace;font-size:36px;font-weight:900;color:#ffcc00;display:block;text-shadow:0 0 20px rgba(255,204,0,0.5)}
     #scsub{font-size:10px;color:rgba(255,255,255,0.35);font-family:'Orbitron',monospace;letter-spacing:1px;margin-top:4px;display:block}
     #coine{margin-top:10px;font-size:13px;color:#ffaa00;font-family:'Orbitron',monospace;letter-spacing:2px}
+    #go-state-badge{margin:10px auto 0;display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,rgba(255,204,0,0.15),rgba(255,100,0,0.10));border:1px solid rgba(255,200,0,0.4);border-radius:20px;padding:6px 16px;font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;color:#ffcc00;text-transform:uppercase}
+    #go-state-badge .badge-flag{font-size:16px;line-height:1}
+    #go-share-btn{margin-top:10px;background:linear-gradient(135deg,#1da1f2,#0d8bd9);border:none;color:#fff;font-family:'Orbitron',monospace;font-size:10px;letter-spacing:2px;padding:8px 20px;border-radius:20px;cursor:pointer;text-transform:uppercase;-webkit-tap-highlight-color:transparent}
+    #go-share-btn:active{opacity:0.8}
+    @keyframes scoreCount{from{opacity:0;transform:scale(0.6)}to{opacity:1;transform:scale(1)}}
+    .score-animate{animation:scoreCount 0.55s cubic-bezier(0.34,1.56,0.64,1) forwards}
 
     /* PAUSE */
     #ps2{background:rgba(4,3,12,0.88);backdrop-filter:blur(20px)}
@@ -230,8 +236,10 @@
     <span id="scsub">BEST &nbsp;·&nbsp; <span id="sb2">0</span></span>
   </div>
   <div id="coine"></div>
-  <span id="gnr" style="color:#ff9900;font-size:11px;font-family:'Orbitron',monospace;letter-spacing:1px;margin-top:4px"></span>
-  <button class="btn" onclick="startGame()" style="margin-top:18px">▶ &nbsp;TRY AGAIN</button>
+  <div id="go-state-badge" style="display:none"><span class="badge-flag" id="go-state-flag">🏁</span><span id="go-state-name">Texas</span> reached</div>
+  <span id="gnr" style="color:#ff9900;font-size:11px;font-family:'Orbitron',monospace;letter-spacing:1px;margin-top:6px"></span>
+  <button id="go-share-btn" onclick="shareScore()">📤 &nbsp;SHARE SCORE</button>
+  <button class="btn" onclick="startGame()" style="margin-top:12px">▶ &nbsp;TRY AGAIN</button>
   <button class="btn sec" onclick="openGarage()">🚗 &nbsp;GARAGE</button>
   <button class="btn sec" onclick="showTitle()">MENU</button>
 </div>
@@ -464,6 +472,13 @@ let composer = null; // initialized after scene+camera exist
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 600);
 camera.position.set(0, 7.2, 18);
+
+// Camera lean state (for lane-change roll effect)
+let _camLean      = 0;     // current roll (radians)
+let _camLeanTarget= 0;     // target roll
+let _camFOV       = 62;    // current FOV
+let _camFOVTarget = 62;    // target FOV
+const _CAM_FOV_BASE = 62;
 camera.lookAt(0, 0.0, -14);
 
 // ─── POST-PROCESSING: Bloom ───
@@ -645,6 +660,241 @@ function buildStars(){
 buildStars();
 
 // ════════════════════════════════════════════════════
+// DAY / NIGHT CYCLE  — runs every frame during gameplay
+// ════════════════════════════════════════════════════
+let _dayTime  = 0.25;   // 0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk, 1=midnight
+let _daySpeed = 0.012;  // full day every ~83 seconds of play
+let _dayLocked= false;  // true when a state forces night (pennsylvania etc.)
+
+const _daySkyTop  = new THREE.Color();
+const _daySkyBot  = new THREE.Color();
+const _dayFogCol  = new THREE.Color();
+
+// Pre-baked sky gradient stops: [time, topHex, botHex, fogHex, sunIntensity]
+const _DAY_STOPS = [
+  [0.00, 0x010108, 0x020210, 0x010108, 0.02],   // midnight
+  [0.18, 0x0a0520, 0x1a0c18, 0x080418, 0.05],   // pre-dawn
+  [0.25, 0x1a0a30, 0x6b2a08, 0x4a1a06, 0.30],   // dawn — orange horizon
+  [0.33, 0x1a3058, 0x4a6090, 0x2a4060, 0.80],   // morning
+  [0.50, 0x0d1e40, 0x2a4870, 0x1a3050, 1.80],   // noon
+  [0.67, 0x1a2a50, 0x3a5060, 0x2a3858, 1.40],   // afternoon
+  [0.75, 0x200818, 0x6a2208, 0x4a1806, 0.35],   // dusk — red/orange
+  [0.85, 0x100418, 0x1a0c18, 0x0c0410, 0.08],   // twilight
+  [1.00, 0x010108, 0x020210, 0x010108, 0.02],   // midnight again
+];
+
+function _lerpStop(a, b, t){
+  // a, b = [time, topHex, botHex, fogHex, sunI]
+  return {
+    top:  new THREE.Color(a[1]).lerp(new THREE.Color(b[1]), t),
+    bot:  new THREE.Color(a[2]).lerp(new THREE.Color(b[2]), t),
+    fog:  new THREE.Color(a[3]).lerp(new THREE.Color(b[3]), t),
+    sunI: a[4] + (b[4]-a[4])*t
+  };
+}
+
+function _getDayColors(t){
+  // find surrounding stops
+  let lo = _DAY_STOPS[0], hi = _DAY_STOPS[_DAY_STOPS.length-1];
+  for(let i=0;i<_DAY_STOPS.length-1;i++){
+    if(t>=_DAY_STOPS[i][0] && t<=_DAY_STOPS[i+1][0]){
+      lo=_DAY_STOPS[i]; hi=_DAY_STOPS[i+1]; break;
+    }
+  }
+  const span = hi[0]-lo[0] || 1;
+  return _lerpStop(lo, hi, (t-lo[0])/span);
+}
+
+function tickDayNight(dt){
+  if(gamePhase!=='playing') return;
+  if(!_dayLocked) _dayTime = (_dayTime + _daySpeed*dt) % 1.0;
+
+  // Don't override biome-specific nights (handled by applyEnvironment)
+  const st = US_STATES[G.stateIndex];
+  const biomeIsNight = st && (st.env==='night');
+  if(biomeIsNight) return; // applyEnvironment already set lighting
+
+  const c = _getDayColors(_dayTime);
+
+  // Update sky mesh top/bot gradient by rebuilding it (cheap enough per-frame)
+  // We lerp the existing skyMesh material rather than rebuild
+  if(skyMesh && skyMesh.geometry){
+    // Access the two vertex colors baked into the gradient
+    const geo = skyMesh.geometry;
+    const col = geo.attributes.color;
+    if(col){
+      const topC = c.top, botC = c.bot;
+      for(let i=0;i<col.count;i++){
+        const y = geo.attributes.position.getY(i);
+        const blend = Math.max(0, Math.min(1, (y+50)/220));
+        const r = botC.r+(topC.r-botC.r)*blend;
+        const g = botC.g+(topC.g-botC.g)*blend;
+        const b = botC.b+(topC.b-botC.b)*blend;
+        col.setXYZ(i, r, g, b);
+      }
+      col.needsUpdate = true;
+    }
+  }
+
+  // Fog colour
+  if(scene.fog) scene.fog.color.copy(c.fog);
+  renderer.setClearColor(c.fog);
+
+  // Sun arc — rises in east (+X side), sets west (-X side)
+  const angle = _dayTime * Math.PI * 2;  // 0→2π over day
+  const sunR = 280;
+  const isDay = _dayTime > 0.22 && _dayTime < 0.78;
+  sunDisc.visible  = isDay && gamePhase==='playing';
+  moonDisc.visible = !isDay && gamePhase==='playing';
+  if(starField) starField.visible = !isDay && gamePhase==='playing';
+
+  // Position: arc across sky
+  if(isDay){
+    const dayAngle = (_dayTime - 0.25) / 0.5; // 0→1 from dawn to dusk
+    const sunA = dayAngle * Math.PI;           // east to west
+    sunDisc.position.set(
+      Math.cos(sunA + Math.PI/2) * sunR * 0.4,
+      Math.sin(sunA) * 140 + 10,
+      -260
+    );
+    // Sun colour: warm at edges, white at noon
+    const noonBlend = Math.sin(dayAngle * Math.PI);
+    sunDisc.material.color.setRGB(
+      1.0,
+      0.6 + 0.4*noonBlend,
+      0.1 + 0.7*noonBlend
+    );
+    sunDisc.scale.setScalar(dayAngle<0.1||dayAngle>0.9 ? 1.6 : 1.0);
+  } else {
+    // Moon arc: opposite side
+    const nightFrac = _dayTime < 0.25 ? (_dayTime+0.25)/0.5 : (_dayTime-0.75)/0.5;
+    const moonA = nightFrac * Math.PI;
+    moonDisc.position.set(
+      Math.cos(moonA + Math.PI/2) * sunR * 0.35,
+      Math.sin(moonA) * 110 + 20,
+      -260
+    );
+  }
+
+  // Sun directional light — track arc
+  if(isDay){
+    const dayA = (_dayTime-0.25)/0.5 * Math.PI;
+    sun.position.set(
+      Math.cos(dayA+Math.PI/2)*80,
+      Math.sin(dayA)*100 + 5,
+      20
+    );
+    sun.intensity = c.sunI;
+    // Warm sunrise/sunset tint
+    const noonB = Math.sin((_dayTime-0.25)/0.5*Math.PI);
+    sun.color.setRGB(1.0, 0.55+0.45*noonB, 0.1+0.85*noonB);
+    ambient.intensity = 0.08 + 0.27*Math.sin((_dayTime-0.25)/0.5*Math.PI);
+  } else {
+    sun.intensity = 0.04;
+    ambient.intensity = 0.06;
+  }
+}
+
+
+// ════════════════════════════════════════════════════
+// LENS FLARE SYSTEM  (High quality only)
+// ════════════════════════════════════════════════════
+let _lensFlares = [];  // {mesh, baseOpacity, offsetX, offsetY, scale}
+
+function _makeFlareSprite(size, color, opacity){
+  // Draw a soft glow circle into a canvas texture
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const ctx = cv.getContext('2d');
+  const grad = ctx.createRadialGradient(64,64,0, 64,64,64);
+  const r = (color>>16)&0xff, g=(color>>8)&0xff, b=color&0xff;
+  grad.addColorStop(0,   `rgba(${r},${g},${b},1.0)`);
+  grad.addColorStop(0.3, `rgba(${r},${g},${b},0.6)`);
+  grad.addColorStop(1,   `rgba(${r},${g},${b},0.0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,128,128);
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.SpriteMaterial({map:tex, transparent:true, opacity, fog:false, depthTest:false, blending:THREE.AdditiveBlending});
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(size,size,1);
+  return sprite;
+}
+
+function buildLensFlares(){
+  if(typeof QUALITY_PRESETS==='undefined') return;
+  // Only build for High quality
+  const isHigh = (window._activeQuality==='high'||document.getElementById('q-high')?.classList?.contains('active'));
+  // Always build — we gate visibility in tick
+  const flareConfigs = [
+    {size:28, color:0xffeeaa, opacity:0.55, ox: 0.0, oy: 0.0, sc:1.0}, // main disc
+    {size:12, color:0xffffff, opacity:0.35, ox: 0.08, oy:-0.04, sc:0.5},
+    {size:7,  color:0xaaccff, opacity:0.25, ox: 0.18, oy: 0.06, sc:0.3},
+    {size:18, color:0xff8833, opacity:0.18, ox:-0.12, oy: 0.08, sc:0.7},
+    {size:5,  color:0xffffff, opacity:0.40, ox: 0.28, oy:-0.10, sc:0.25},
+    {size:9,  color:0xffd080, opacity:0.20, ox:-0.22, oy: 0.12, sc:0.4},
+  ];
+  _lensFlares = [];
+  for(const cfg of flareConfigs){
+    const sp = _makeFlareSprite(cfg.size, cfg.color, cfg.opacity);
+    sp.visible = false;
+    scene.add(sp);
+    _lensFlares.push({mesh:sp, baseOpacity:cfg.opacity, ox:cfg.ox, oy:cfg.oy, sc:cfg.sc, cfg});
+  }
+}
+buildLensFlares();
+
+// Reusable vectors for flare projection
+const _flareNDC = new THREE.Vector3();
+const _flareProjMat = new THREE.Matrix4();
+const _flareVP = new THREE.Vector4();
+
+function tickLensFlare(){
+  if(!_lensFlares.length) return;
+  const isDay = _dayTime > 0.22 && _dayTime < 0.78;
+  const isPlaying = gamePhase==='playing';
+  const show = isDay && isPlaying && sunDisc.visible;
+
+  if(!show){
+    _lensFlares.forEach(f=>f.mesh.visible=false);
+    return;
+  }
+
+  // Project sunDisc position to screen NDC
+  _flareNDC.copy(sunDisc.position);
+  _flareNDC.project(camera);
+
+  // Lens axis: from sun toward screen center (opposite direction)
+  const lx = -_flareNDC.x, ly = -_flareNDC.y;
+
+  // Fade if sun near edge of screen
+  const edgeDist = Math.max(Math.abs(_flareNDC.x), Math.abs(_flareNDC.y));
+  const fadeEdge = Math.max(0, 1 - Math.max(0, edgeDist-0.5)*5);
+  // Fade at dawn/dusk
+  const dayFrac = (_dayTime-0.25)/0.5;
+  const fadeDay = Math.min(1, Math.sin(dayFrac*Math.PI)*3);
+  const masterOpacity = fadeEdge * fadeDay;
+
+  for(const f of _lensFlares){
+    if(masterOpacity < 0.01){
+      f.mesh.visible = false;
+      continue;
+    }
+    // Place along lens axis
+    const wx = (_flareNDC.x + lx*f.ox) * (window.innerWidth/2);
+    const wy = (-(_flareNDC.y + ly*f.oy)) * (window.innerHeight/2);
+
+    // Convert from NDC back to world (approximate at fixed Z)
+    const worldX = (_flareNDC.x + lx*f.ox) * 80;
+    const worldY = (_flareNDC.y + ly*f.oy) * 40 + 30;
+
+    f.mesh.position.set(worldX, worldY + 50, -100);
+    f.mesh.material.opacity = f.baseOpacity * masterOpacity;
+    f.mesh.scale.setScalar(f.cfg.size * f.sc * (0.8 + 0.4*fadeDay));
+    f.mesh.visible = true;
+  }
+}
+
+// ════════════════════════════════════════════════════
 // GEOMETRY BUILDERS
 // ════════════════════════════════════════════════════
 function makeBox(w,h,d,color,options={}){
@@ -792,7 +1042,13 @@ const groundMat = new THREE.MeshPhysicalMaterial({
   // Ground extends 800 units wide — per-state color set in applyEnvironment
 });
 // Wet road overlay (used in rain biome)
-const wetRoadMat = new THREE.MeshStandardMaterial({color:0x18202c, map:asphaltTex, roughness:0.18, metalness:0.55, envMapIntensity:1.2});
+const wetRoadMat = new THREE.MeshPhysicalMaterial({
+  color:0x18202c, map:asphaltTex,
+  roughness:0.08, metalness:0.20,
+  clearcoat:1.0, clearcoatRoughness:0.04,
+  envMapIntensity:2.8,
+  reflectivity:0.95
+});
 
 const roadSegments = [];
 const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(600,2400), groundMat);
@@ -2949,6 +3205,11 @@ function updateWeather(dt){
     }
     rainSystem.geometry.attributes.position.needsUpdate = true;
   }
+  // Clearcoat puddle shimmer — flicker clearcoatRoughness for wet road sparkle
+  if((w==='rain'||w==='heavyrain') && wetRoadMat && wetRoadMat.clearcoat){
+    wetRoadMat.clearcoatRoughness = 0.02 + Math.abs(Math.sin(performance.now()*0.003)) * 0.06;
+    wetRoadMat.needsUpdate = false; // only roughness changes, no full recompile needed
+  }
 
   // ── Tick snow ──
   if(snowSystem && snowSystem.visible){
@@ -3421,15 +3682,57 @@ function gameOver(){
   show('go'); hide('ps2'); setHUD(false);
   document.getElementById('gm').textContent=Math.floor(G.miles);
   document.getElementById('gtk').textContent=G.trucksOvertaken;
-  document.getElementById('scbig').textContent=G.score.toLocaleString();
   document.getElementById('sb2').textContent=SAVE.bestScore.toLocaleString();
   document.getElementById('gnr').textContent=G.isNewBest?'🏆 NEW PERSONAL BEST!':'';
   document.getElementById('coine').textContent=`+${G.coinsEarned} 🪙 coins earned`;
+  // Animated score counter
+  (function(){
+    const el=document.getElementById('scbig');
+    el.classList.remove('score-animate');
+    void el.offsetWidth; // reflow to restart animation
+    el.classList.add('score-animate');
+    const target=G.score, duration=900, start=performance.now();
+    function anim(now){
+      const t=Math.min(1,(now-start)/duration);
+      const ease=t<0.5?4*t*t*t:(t-1)*(2*t-2)*(2*t-2)+1;
+      el.textContent=Math.floor(ease*target).toLocaleString();
+      if(t<1) requestAnimationFrame(anim);
+    }
+    requestAnimationFrame(anim);
+  })();
+  // State badge
+  const _curState=US_STATES[G.stateIndex];
+  const _stateFlags={'Texas':'🤠','California':'🌴','Florida':'🌊','Nevada':'🎰',
+    'Arizona':'🌵','Colorado':'⛰️','New York':'🗽','Louisiana':'🎷','Illinois':'🌆',
+    'Michigan':'🏔️','Pennsylvania':'🔔','New Jersey':'🌉','Connecticut':'🌿',
+    'Massachusetts':'🦞','Indiana':'🏁','Ohio':'🚀','Missouri':'⭐','Tennessee':'🎸',
+    'Georgia':'🍑','North Carolina':'🌲','default':'🏁'};
+  if(_curState){
+    const badge=document.getElementById('go-state-badge');
+    document.getElementById('go-state-flag').textContent=_stateFlags[_curState.name]||_stateFlags['default'];
+    document.getElementById('go-state-name').textContent=_curState.name;
+    badge.style.display='inline-flex';
+  }
   updateBestHint();
 }
 function updateBestHint(){
   const el=document.getElementById('bh');
   if(el) el.textContent=SAVE.bestScore>0?`🏆 Best: ${SAVE.bestScore.toLocaleString()}`:'';
+}
+function shareScore(){
+  const st=US_STATES[G.stateIndex];
+  const stateName=st?st.name:'Unknown';
+  const text=`🏎️ ASPHALT NATION\nScore: ${G.score.toLocaleString()}\nMiles: ${Math.floor(G.miles)} | Passes: ${G.trucksOvertaken}\nReached: ${stateName}\n\nCan you beat me? 🔥`;
+  if(navigator.share){
+    navigator.share({title:'Asphalt Nation', text}).catch(()=>{});
+  } else {
+    navigator.clipboard.writeText(text).then(()=>{
+      const btn=document.getElementById('go-share-btn');
+      const orig=btn.textContent;
+      btn.textContent='✅ Copied!';
+      setTimeout(()=>btn.textContent=orig, 2000);
+    }).catch(()=>{});
+  }
 }
 
 // ─── ENVIRONMENT TRANSITION ───
@@ -3469,10 +3772,14 @@ function applyEnvironment(idx){
 
   // Sun/moon — only show during gameplay, not on title/game-over screens
   const isNight=(st.env==='night');
+  // Night-locked states: force day cycle to night position
+  const _nightStates = ['pennsylvania','newjersey','connecticut','massachusetts'];
+  _dayLocked = isNight || _nightStates.indexOf(st.scenery||'') !== -1;
+  if(_dayLocked){ _dayTime = 0.0; } // midnight
   if(gamePhase==='playing'){
-    sunDisc.visible=!isNight;
-    moonDisc.visible=isNight;
-    if(starField) starField.visible=isNight;
+    sunDisc.visible = _dayLocked ? false : (sunDisc.visible);
+    moonDisc.visible = _dayLocked ? true : (moonDisc.visible);
+    if(starField) starField.visible = _dayLocked || isNight;
   }
 
   // Adjust sun disc color/size per biome
@@ -3543,6 +3850,10 @@ function switchLane(d){
   G.playerX=G.playerTargetX;
   SFX.screech();
   _updateLaneDots();
+  // Camera lean: roll toward turn direction + FOV pulse
+  _camLeanTarget = -d * 0.18;  // ~10 degrees
+  _camFOVTarget  = _CAM_FOV_BASE + 5;
+  setTimeout(()=>{ _camLeanTarget=0; _camFOVTarget=_CAM_FOV_BASE; }, 380);
 }
 function _updateLaneDots(){
   for(let i=0;i<LANE_COUNT;i++){
@@ -3725,6 +4036,8 @@ function update(dt){
 
   updateRainParticles(dt);
   tickEnvLerp(dt);
+  tickDayNight(dt);
+  tickLensFlare();
   // Update engine pitch every frame
   const _spMax=ROAD_Z_SPEED_BASE*2.8*(getCarDef().speed||1);
   const _spNorm=Math.min(1,G.speed/_spMax);
@@ -3740,6 +4053,15 @@ function update(dt){
   playerMesh.position.x=G.playerX;
   playerMesh.rotation.z=-(G.playerTargetX-G.playerX)*0.08;
   camera.position.x+=(G.playerX*0.25-camera.position.x)*Math.min(1,3*dt);
+
+  // Camera lean (roll on lane change) + FOV pulse
+  _camLean += (_camLeanTarget - _camLean) * Math.min(1, 12*dt);
+  _camFOV  += (_camFOVTarget  - _camFOV)  * Math.min(1, 10*dt);
+  camera.rotation.z = _camLean;
+  if(Math.abs(_camFOV - camera.fov) > 0.05){
+    camera.fov = _camFOV;
+    camera.updateProjectionMatrix();
+  }
 
   // Move sky with camera (fixed on horizon)
   skyMesh.position.x = camera.position.x;
