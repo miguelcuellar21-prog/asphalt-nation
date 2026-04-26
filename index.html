@@ -130,7 +130,7 @@
     @media(pointer:coarse){
       #tilt-bar{display:flex}
       #lane-dots{display:flex}
-      #swipe-hints{display:block}
+      #swipe-hints{display:none}
       #mobile-hint{display:inline!important}
       /* Compact HUD for iPhone */
       .hv{font-size:17px}
@@ -204,7 +204,7 @@
   <button class="btn sec" onclick="openGarage()">🚗 &nbsp;GARAGE</button>
   <div id="hint">
     <span id="mobile-hint" style="display:none">Swipe left/right to change lanes &nbsp;·&nbsp; Tap for power-up &nbsp;·&nbsp; Tilt to steer</span>
-    <span class="desktop-hint">← → or A/D — Lanes &nbsp;·&nbsp; SPACE — Power-up &nbsp;·&nbsp; ESC — Pause</span>
+    <span class="desktop-hint" style="display:none">← → or A/D — Lanes &nbsp;·&nbsp; SPACE — Power-up &nbsp;·&nbsp; ESC — Pause</span>
     <br/><span id="bh"></span>
   </div>
 </div>
@@ -2159,7 +2159,6 @@ function resetG(){
     roadZ:0,
     speed:ROAD_Z_SPEED_BASE*car.speed,
     baseSpeed:ROAD_Z_SPEED_BASE*car.speed,
-    playerX:0,
     _twHitCooldown:false,
     currentSpeed:ROAD_Z_SPEED_BASE*car.speed,
     playerLane:1, playerTargetX:0, playerX:0,
@@ -2612,7 +2611,7 @@ function update(dt){
     row.left&&(row.left.position.z+=dz);
     row.right&&(row.right.position.z+=dz);
     if(row.left&&row.left.position.z>18){
-      refreshSceneryRow(row, row.left.position.z-SCENERY_ROWS*scStep, env);
+      refreshSceneryRow(row, row.left.position.z-SCENERY_ROWS*scStep, env, US_STATES[G.stateIndex].scenery||'');
     }
   }
 
