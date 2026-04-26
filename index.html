@@ -706,6 +706,9 @@ function _getDayColors(t){
   return _lerpStop(lo, hi, (t-lo[0])/span);
 }
 
+let _dayNightThrottle = 0;   // seconds since last sky rebuild
+const DAY_SKY_INTERVAL = 2.0; // rebuild sky mesh every 2s (not every frame)
+
 function tickDayNight(dt){
   if(gamePhase!=='playing') return;
   if(!_dayLocked) _dayTime = (_dayTime + _daySpeed*dt) % 1.0;
@@ -713,31 +716,23 @@ function tickDayNight(dt){
   // Don't override biome-specific nights (handled by applyEnvironment)
   const st = US_STATES[G.stateIndex];
   const biomeIsNight = st && (st.env==='night');
-  if(biomeIsNight) return; // applyEnvironment already set lighting
+  if(biomeIsNight) return;
 
   const c = _getDayColors(_dayTime);
 
-  // Update sky mesh top/bot gradient by rebuilding it (cheap enough per-frame)
-  // We lerp the existing skyMesh material rather than rebuild
-  if(skyMesh && skyMesh.geometry){
-    // Access the two vertex colors baked into the gradient
-    const geo = skyMesh.geometry;
-    const col = geo.attributes.color;
-    if(col){
-      const topC = c.top, botC = c.bot;
-      for(let i=0;i<col.count;i++){
-        const y = geo.attributes.position.getY(i);
-        const blend = Math.max(0, Math.min(1, (y+50)/220));
-        const r = botC.r+(topC.r-botC.r)*blend;
-        const g = botC.g+(topC.g-botC.g)*blend;
-        const b = botC.b+(topC.b-botC.b)*blend;
-        col.setXYZ(i, r, g, b);
-      }
-      col.needsUpdate = true;
-    }
+  // Throttle expensive sky vertex rebuild — only every DAY_SKY_INTERVAL seconds
+  _dayNightThrottle += dt;
+  if(_dayNightThrottle >= DAY_SKY_INTERVAL){
+    _dayNightThrottle = 0;
+    // Rebuild sky mesh with new colors (cheap: only done every 2s)
+    const oldSky = skyMesh;
+    skyMesh = makeSkyGradient(c.top.getHex(), c.bot.getHex());
+    skyMesh.position.copy(oldSky.position);
+    scene.remove(oldSky);
+    scene.add(skyMesh);
   }
 
-  // Fog colour
+  // Fog and clear color — cheap lerp every frame
   if(scene.fog) scene.fog.color.copy(c.fog);
   renderer.setClearColor(c.fog);
 
@@ -849,8 +844,12 @@ const _flareNDC = new THREE.Vector3();
 const _flareProjMat = new THREE.Matrix4();
 const _flareVP = new THREE.Vector4();
 
+let _lensFlareFrame = 0;
 function tickLensFlare(){
   if(!_lensFlares.length) return;
+  // Throttle: only run every 3 frames
+  _lensFlareFrame++;
+  if(_lensFlareFrame % 3 !== 0) return;
   const isDay = _dayTime > 0.22 && _dayTime < 0.78;
   const isPlaying = gamePhase==='playing';
   const show = isDay && isPlaying && sunDisc.visible;
@@ -959,13 +958,13 @@ function makeAsphaltTexture(){
     }
     ctx.stroke(); ctx.restore();
   }
-  // Tire track marks (parallel dark bands)
+  // Tire track marks (subtle dark bands, pure black — no color tint)
   for(let t=0;t<4;t++){
     const x=55+t*135;
     const grd=ctx.createLinearGradient(x-14,0,x+14,0);
     grd.addColorStop(0,'rgba(0,0,0,0)');
-    grd.addColorStop(0.3,'rgba(0,0,8,0.28)');
-    grd.addColorStop(0.7,'rgba(0,0,8,0.28)');
+    grd.addColorStop(0.3,'rgba(0,0,0,0.22)');
+    grd.addColorStop(0.7,'rgba(0,0,0,0.22)');
     grd.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=grd;
     ctx.fillRect(x-14,0,28,size);
@@ -1027,20 +1026,17 @@ const roadMat = new THREE.MeshPhysicalMaterial({
   reflectivity: 0.2,
 });
 const shoulderMat = new THREE.MeshPhysicalMaterial({
-  color: 0xc4b896,
-  roughness: 0.96,
+  color: 0x1a1a1e,  // dark asphalt-gray shoulder — no tan/brown
+  roughness: 0.98,
   metalness: 0.0,
-  clearcoat: 0.03,  // barely any sheen — crumbled asphalt texture
 });
 // Lane lines — white dashed, subtle glow (not orange/gold)
 const lineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.35, emissive:new THREE.Color(0xffffff), emissiveIntensity:0.6});
 const edgeLineMat = new THREE.MeshStandardMaterial({color:0xeeeeee, roughness:0.35, emissive:new THREE.Color(0xdddddd), emissiveIntensity:0.4});
 const groundMat = new THREE.MeshPhysicalMaterial({
-  color: 0x3d1f06,
+  color: 0x2a3020,  // neutral dark green-gray — overridden per-state anyway
   roughness: 1.0,
   metalness: 0.0,
-  clearcoat: 0.0,
-  // Ground extends 800 units wide — per-state color set in applyEnvironment
 });
 // Wet road overlay (used in rain biome)
 const wetRoadMat = new THREE.MeshPhysicalMaterial({
@@ -1091,18 +1087,7 @@ function buildRoadSegment(){
     const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.18,SEGMENT_LEN),railMat);
     rail.position.set(sx,0.72,0); rail.castShadow=true; grp.add(rail);
   }
-  // Guardrails
-  for(const sx of [-ROAD_HALF-1.3, ROAD_HALF+1.3]){
-    const rail=makeBox(0.08, 0.5, SEGMENT_LEN, 0xaaaaaa, {metalness:0.7, roughness:0.3});
-    rail.position.set(sx, 0.28, 0); grp.add(rail);
-    // Posts every 8 units
-    const postCount = Math.floor(SEGMENT_LEN/8);
-    for(let p=0;p<postCount;p++){
-      const post=makeBox(0.1, 0.9, 0.1, 0x888888, {metalness:0.5, roughness:0.4});
-      post.position.set(sx, 0.45, -SEGMENT_LEN/2 + p*8 + 4);
-      grp.add(post);
-    }
-  }
+  // (duplicate guardrail set removed — perf)
   // Lane dashes — white, standard highway spacing
   for(let l=1;l<LANE_COUNT;l++){
     const lx=-ROAD_HALF+l*LANE_WIDTH;
