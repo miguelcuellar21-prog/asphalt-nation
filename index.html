@@ -300,24 +300,24 @@ const US_STATES = [
    weather:'snow', hazardStrength:0.45},
   // ── Great Plains ──
   {name:'Texas',         env:'plains',  scenery:'texas',      fog:0.009, fogColor:0x0c1608, sky:0x081010, ground:0x4a6830, accent:0x55dd44, sunColor:0xffd880, skyTop:0x061018, skyBot:0x2a4a18,
-   tagline:'EVERYTHING IS BIGGER IN TEXAS',
+   tagline:'EVERYTHING IS BIGGER IN TEXAS', mountainColor:0x4a6020, mountainZ:-240,
    weather:'tumbleweed', hazardStrength:0.35},
   {name:'Oklahoma',      env:'plains',  scenery:'oklahoma',   fog:0.008, fogColor:0x0a1406, sky:0x060c0e, ground:0x507040, accent:0x66dd44, sunColor:0xffe090, skyTop:0x040e18, skyBot:0x2c3e12,
-   tagline:'THE SOONER STATE',
+   tagline:'THE SOONER STATE', mountainColor:0x3a5a18, mountainZ:-250,
    weather:'clear', hazardStrength:0.0},
   {name:'Kansas',        env:'plains',  scenery:'kansas',     fog:0.007, fogColor:0x080c06, sky:0x040a0c, ground:0x5a7040, accent:0x77ee55, sunColor:0xffe8a8, skyTop:0x020a16, skyBot:0x303e0e,
-   tagline:'THE SUNFLOWER STATE',
+   tagline:'THE SUNFLOWER STATE', mountainColor:0x304a12, mountainZ:-260,
    weather:'clear', hazardStrength:0.0},
   // ── South / Gulf ──
   {name:'Louisiana',     env:'rain',    scenery:'louisiana',  fog:0.028, fogColor:0x081410, sky:0x041010, ground:0x2a4420, accent:0x88ffaa, sunColor:0x88aaaa, skyTop:0x020c0c, skyBot:0x1a3418,
-   tagline:'THE PELICAN STATE',
+   tagline:'THE PELICAN STATE', mountainColor:0x1a3a18, mountainZ:-200,
    weather:'heavyrain', hazardStrength:0.55},
   {name:'Mississippi',   env:'rain',    scenery:'mississippi',fog:0.025, fogColor:0x0a1212, sky:0x060e0e, ground:0x2e4822, accent:0x77ee99, sunColor:0x99bbaa, skyTop:0x040c0c, skyBot:0x1c3818,
    tagline:'THE MAGNOLIA STATE',
    weather:'heavyrain', hazardStrength:0.55},
   // ── Midwest ──
   {name:'Missouri',      env:'city',    scenery:'missouri',   fog:0.022, fogColor:0x080812, sky:0x040408, ground:0x101010, accent:0x4488ff, sunColor:0x8899cc, skyTop:0x030308, skyBot:0x101020,
-   tagline:'THE GATEWAY STATE',
+   tagline:'THE GATEWAY STATE', mountainColor:0x1a1a30, mountainZ:-220,
    weather:'clear', hazardStrength:0.0},
   {name:'Illinois',      env:'city',    scenery:'illinois',   fog:0.025, fogColor:0x06060e, sky:0x030308, ground:0x0e0e0e, accent:0x3377ff, sunColor:0x7788bb, skyTop:0x020206, skyBot:0x0c0c1c,
    tagline:'THE LAND OF LINCOLN',
@@ -366,14 +366,98 @@ const getCarDef = () => CARS.find(c=>c.id===SAVE.selectedCar)||CARS[0];
 // THREE.JS SETUP
 // ════════════════════════════════════════════════════
 const canvas = document.getElementById('c');
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio, 3));
-renderer.shadowMap.enabled = true;
+
+// ═══════════════════════════════════════════════════
+// QUALITY PRESETS — Low / Medium / High
+// Auto-detect tier; user can override via settings
+// ═══════════════════════════════════════════════════
+const QUALITY_PRESETS = {
+  low: {
+    pixelRatio: 1.0,
+    shadowMap: false,
+    shadowMapSize: 256,
+    bloomEnabled: false,
+    bloomStrength: 0.0,
+    sceneryRows: 14,
+    asphaltTexSize: 256,
+    anisotropy: 1,
+    weatherParticles: 0,       // weather particles off
+    physicallyCorrect: false,
+  },
+  medium: {
+    pixelRatio: Math.min(devicePixelRatio, 1.5),
+    shadowMap: true,
+    shadowMapSize: 512,
+    bloomEnabled: true,
+    bloomStrength: 0.35,
+    sceneryRows: 22,
+    asphaltTexSize: 512,
+    anisotropy: 4,
+    weatherParticles: 1000,
+    physicallyCorrect: false,
+  },
+  high: {
+    pixelRatio: Math.min(devicePixelRatio, 3),
+    shadowMap: true,
+    shadowMapSize: 2048,
+    bloomEnabled: true,
+    bloomStrength: 0.55,
+    sceneryRows: 30,
+    asphaltTexSize: 1024,
+    anisotropy: -1,           // -1 = max
+    weatherParticles: 2200,
+    physicallyCorrect: true,
+  },
+};
+
+// Auto-detect GPU tier
+function detectQualityTier(){
+  const dpr = window.devicePixelRatio || 1;
+  const mem = navigator.deviceMemory || 4;
+  // iPhone 14 Pro = DPR 3, > 6GB RAM → High
+  // Mid-range Android = DPR 2-2.5, 4GB RAM → Medium
+  // Low-end = DPR ≤ 1.5, < 3GB → Low
+  if(dpr >= 3 && mem >= 6) return 'high';
+  if(dpr >= 2 && mem >= 3) return 'medium';
+  return 'low';
+}
+
+let _qualityTier = detectQualityTier();
+let QUALITY = QUALITY_PRESETS[_qualityTier];
+console.log('Quality tier:', _qualityTier, QUALITY);
+
+// ─── Dynamic Resolution Scaling ───
+let _drsLowFPSFrames  = 0;
+let _drsHighFPSFrames = 0;
+let _drsCooldown = 0;
+let _fpsHistory = [];
+
+function updateDRS(fps){
+  if(_drsCooldown > 0){ _drsCooldown--; return; }
+  _fpsHistory.push(fps);
+  if(_fpsHistory.length > 90) _fpsHistory.shift();  // 90-frame window
+  const avgFPS = _fpsHistory.reduce((a,b)=>a+b,0) / _fpsHistory.length;
+  const currentPR = renderer.getPixelRatio();
+  if(avgFPS < 25 && currentPR > 1.0){
+    renderer.setPixelRatio(Math.max(1.0, currentPR - 0.5));
+    if(composer && window._bloomPass) window._bloomPass.strength *= 0.7;
+    console.log('DRS: stepped down to PR', renderer.getPixelRatio().toFixed(1));
+    _drsCooldown = 300; _fpsHistory = [];
+  } else if(avgFPS > 55 && currentPR < QUALITY.pixelRatio){
+    renderer.setPixelRatio(Math.min(QUALITY.pixelRatio, currentPR + 0.25));
+    console.log('DRS: stepped up to PR', renderer.getPixelRatio().toFixed(1));
+    _drsCooldown = 300; _fpsHistory = [];
+  }
+}
+
+const renderer = new THREE.WebGLRenderer({canvas, antialias: _qualityTier !== 'low'});
+renderer.setPixelRatio(QUALITY.pixelRatio);
+renderer.shadowMap.enabled = QUALITY.shadowMap;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMapping = _qualityTier === 'low' ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 renderer.outputEncoding = THREE.sRGBEncoding || 3001;
-renderer.physicallyCorrectLights = true;
+renderer.physicallyCorrectLights = QUALITY.physicallyCorrect;
 
 let composer = null; // initialized after scene+camera exist
 
@@ -393,10 +477,10 @@ camera.lookAt(0, 0.0, -14);
     // High threshold (0.72) = only truly bright emissives (LEDs, tail-lights) bloom
     const bp = new THREE.UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.55, 0.40, 0.72
+      QUALITY.bloomStrength, 0.40, 0.72
     );
     composer.addPass(rp);
-    composer.addPass(bp);
+    if(QUALITY.bloomEnabled) composer.addPass(bp);
     window._bloomPass = bp;
     // Handle resize
     const _origResize = window.onresize;
@@ -413,7 +497,7 @@ scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xffa060, 1.8);
 sun.position.set(12, 28, 14);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048,2048);
+sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
 sun.shadow.camera.near = 0.5;
 sun.shadow.camera.far = 180;
 sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
@@ -691,11 +775,22 @@ const roadMat = new THREE.MeshPhysicalMaterial({
   envMapIntensity: 0.85,      // picks up headlights in reflections
   reflectivity: 0.3,
 });
-const shoulderMat = new THREE.MeshStandardMaterial({color:0xb8ae90, roughness:0.97});
+const shoulderMat = new THREE.MeshPhysicalMaterial({
+  color: 0xc4b896,
+  roughness: 0.96,
+  metalness: 0.0,
+  clearcoat: 0.03,  // barely any sheen — crumbled asphalt texture
+});
 // Lane lines — bright with stronger emissive so they glow at night
 const lineMat = new THREE.MeshStandardMaterial({color:0xffee00, roughness:0.2, emissive:new THREE.Color(0xffdd00), emissiveIntensity:3.5});
 const edgeLineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.2, emissive:new THREE.Color(0xffffff), emissiveIntensity:1.2});
-const groundMat = new THREE.MeshStandardMaterial({color:0x3d1f06, roughness:1.0, metalness:0.0});
+const groundMat = new THREE.MeshPhysicalMaterial({
+  color: 0x3d1f06,
+  roughness: 1.0,
+  metalness: 0.0,
+  clearcoat: 0.0,
+  // Ground extends 800 units wide — per-state color set in applyEnvironment
+});
 // Wet road overlay (used in rain biome)
 const wetRoadMat = new THREE.MeshStandardMaterial({color:0x18202c, map:asphaltTex, roughness:0.18, metalness:0.55, envMapIntensity:1.2});
 
@@ -1947,7 +2042,8 @@ function makeBuilding(){
         const emInt = lit ? (Math.random()*2.0+0.4) : 0;
         const win = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 1.05),
           new THREE.MeshStandardMaterial({color:winCol, emissive:new THREE.Color(lit?winCol:0x000000),
-            emissiveIntensity:emInt, roughness:0.05, metalness:0.62, transparent:true, opacity:0.92}));
+            emissiveIntensity: lit ? (Math.random()*4.0+2.0) : 0,  // boosted for bloom
+            roughness:0.05, metalness:0.62, transparent:true, opacity:0.92}));
         win.position.set(-w*0.5+0.55+wc*(w/wCols), 2.0+wy*2.8, d*0.5+0.02); g.add(win);
       }
     }
@@ -2038,32 +2134,92 @@ function makeStreetlight(){
 // ─── DISTANT MOUNTAINS (static silhouette in far bg) ───
 function makeMountainRange(color, zPos){
   const g = new THREE.Group();
-  const count = 16 + Math.floor(Math.random()*7);
-  for(let i=0; i<count; i++){
-    const h = 20 + Math.random()*42;
-    const w = 18 + Math.random()*28;
-    // Base cone peak
+  const baseColor = new THREE.Color(color);
+
+  // ─── LAYER 1: Far silhouette (largest, darkest, furthest) ───
+  const farCount = 22 + Math.floor(Math.random()*8);
+  for(let i=0; i<farCount; i++){
+    const h = 28 + Math.random()*55;
+    const w = 22 + Math.random()*38;
+    const farZ = zPos - 60 - Math.random()*40;   // pushed very far back
     const peak = new THREE.Mesh(
-      new THREE.ConeGeometry(w*0.5, h, 7),
+      new THREE.ConeGeometry(w*0.5, h, 8),
       new THREE.MeshStandardMaterial({
-        color:new THREE.Color(color).multiplyScalar(0.68+Math.random()*0.52).getHex(),
+        color: baseColor.clone().multiplyScalar(0.38+Math.random()*0.22).getHex(),
         roughness:1.0, fog:true
       })
     );
-    // Overlapping placement for depth layers
-    const xPos = -90 + i*20 + (Math.random()-0.5)*16;
-    const depthOffset = Math.floor(i/4)*(-8) + Math.random()*16;
-    peak.position.set(xPos, h*0.5 - 2, zPos + depthOffset);
+    const xPos = -120 + i*14 + (Math.random()-0.5)*18;
+    peak.position.set(xPos, h*0.5 - 4, farZ);
     peak.castShadow=false; g.add(peak);
-    // Snow caps on tall peaks
-    if(h > 40){
+    // Snow caps on tall far peaks
+    if(h > 50){
+      const snow = new THREE.Mesh(
+        new THREE.CylinderGeometry(w*0.12, w*0.26, h*0.16, 7),
+        new THREE.MeshStandardMaterial({color:0xddeeff, roughness:0.90, fog:true})
+      );
+      snow.position.set(xPos, h - h*0.07, farZ); g.add(snow);
+    }
+  }
+
+  // ─── LAYER 2: Mid silhouette (medium, mid-tone) ───
+  const midCount = 18 + Math.floor(Math.random()*6);
+  for(let i=0; i<midCount; i++){
+    const h = 18 + Math.random()*36;
+    const w = 16 + Math.random()*24;
+    const midZ = zPos - 20 - Math.random()*30;
+    const peak = new THREE.Mesh(
+      new THREE.ConeGeometry(w*0.5, h, 7),
+      new THREE.MeshStandardMaterial({
+        color: baseColor.clone().multiplyScalar(0.58+Math.random()*0.30).getHex(),
+        roughness:1.0, fog:true
+      })
+    );
+    const xPos = -100 + i*12 + (Math.random()-0.5)*14;
+    peak.position.set(xPos, h*0.5 - 2, midZ);
+    peak.castShadow=false; g.add(peak);
+    if(h > 32){
       const snow = new THREE.Mesh(
         new THREE.CylinderGeometry(w*0.14, w*0.28, h*0.14, 7),
         new THREE.MeshStandardMaterial({color:0xeef2ff, roughness:0.85})
       );
-      snow.position.set(xPos, h - h*0.06, zPos + depthOffset); g.add(snow);
+      snow.position.set(xPos, h - h*0.06, midZ); g.add(snow);
     }
   }
+
+  // ─── LAYER 3: Near foothills (closer, brighter, more detail) ───
+  const nearCount = 10 + Math.floor(Math.random()*5);
+  for(let i=0; i<nearCount; i++){
+    const h = 8 + Math.random()*16;
+    const w = 12 + Math.random()*18;
+    const nearZ = zPos + Math.random()*12;
+    const peak = new THREE.Mesh(
+      new THREE.ConeGeometry(w*0.5, h, 6),
+      new THREE.MeshStandardMaterial({
+        color: baseColor.clone().multiplyScalar(0.75+Math.random()*0.35).getHex(),
+        roughness:0.95, fog:true
+      })
+    );
+    const xPos = -80 + i*18 + (Math.random()-0.5)*12;
+    peak.position.set(xPos, h*0.5, nearZ);
+    peak.castShadow=false; g.add(peak);
+  }
+
+  // ─── LAYER 4: Horizon glow plane (atmospheric haze strip) ───
+  const hazeColor = baseColor.clone().multiplyScalar(1.5).getHex();
+  const haze = new THREE.Mesh(
+    new THREE.PlaneGeometry(380, 18),
+    new THREE.MeshBasicMaterial({
+      color: hazeColor,
+      transparent: true,
+      opacity: 0.08,
+      fog: false,
+    })
+  );
+  haze.rotation.x = -Math.PI/2;
+  haze.position.set(0, 0.5, zPos - 30);
+  g.add(haze);
+
   return g;
 }
 
@@ -2491,18 +2647,59 @@ function updateStreetlightInstances(){
 }
 
 function refreshSceneryRow(row, zPos, env, stateKey){
-  if(row.left) scene.remove(row.left);
+  // Dispose old group
+  if(row.left)  scene.remove(row.left);
   if(row.right) scene.remove(row.right);
-  const spread = ROAD_HALF + 5.0 + Math.random()*20;
-  const objL=makeSceneryObj(env, stateKey||'');
-  objL.position.set(-spread, 0, zPos);
-  const s1=0.5+Math.random()*1.5; objL.scale.set(s1,s1,s1);
-  scene.add(objL);
-  const objR=makeSceneryObj(env, stateKey||'');
-  objR.position.set(spread*(0.8+Math.random()*0.5), 0, zPos);
-  const s2=0.5+Math.random()*1.5; objR.scale.set(s2,s2,s2);
-  scene.add(objR);
-  row.left=objL; row.right=objR; row.z=zPos;
+
+  // Build a GROUP of 1–3 objects per side for visual density
+  function makeCluster(side){
+    const g = new THREE.Group();
+    // Primary object — closest to road
+    const nearSpread = ROAD_HALF + 4.0 + Math.random()*8;
+    const obj1 = makeSceneryObj(env, stateKey||'');
+    const s1 = 0.6 + Math.random()*1.4;
+    obj1.scale.set(s1,s1,s1);
+    obj1.position.set(0, 0, 0);
+    g.add(obj1);
+
+    // Secondary object — mid-distance, slightly behind or ahead
+    if(Math.random() < 0.70){
+      const obj2 = makeSceneryObj(env, stateKey||'');
+      const s2 = 0.45 + Math.random()*1.0;
+      obj2.scale.set(s2,s2,s2);
+      obj2.position.set(
+        side * (8 + Math.random()*10),   // push further out
+        0,
+        (Math.random()-0.5)*16            // slight Z stagger
+      );
+      g.add(obj2);
+    }
+
+    // Tertiary object — far background, large scale for silhouette
+    if(Math.random() < 0.40){
+      const obj3 = makeSceneryObj(env, stateKey||'');
+      const s3 = 1.2 + Math.random()*2.0;  // bigger = further away feel
+      obj3.scale.set(s3,s3,s3);
+      obj3.position.set(
+        side * (20 + Math.random()*18),
+        0,
+        (Math.random()-0.5)*22
+      );
+      g.add(obj3);
+    }
+
+    g.position.set(side * (ROAD_HALF + 4.0 + Math.random()*6), 0, zPos);
+    g.rotation.y = (Math.random()-0.5)*0.25; // slight angle variety
+    return g;
+  }
+
+  const groupL = makeCluster(-1);
+  const groupR = makeCluster(1);
+  scene.add(groupL);
+  scene.add(groupR);
+  row.left = groupL;
+  row.right = groupR;
+  row.z = zPos;
 }
 
 // ══════════════════════════════════════════════════════
@@ -3382,24 +3579,59 @@ function addPopup(text,color){
 
 // ─── SPAWN TRUCK ───
 const TRUCK_COL_HEX=[0xe05a2b,0x2b7de0,0x2bd056,0xd02be0,0xe0c22b,0x8888aa,0xe03355,0x00ccaa];
+// Track last spawned lane for stagger
+let _lastTruckLane = 1;
+let _truckSpawnCount = 0;
+
 function spawnTruck(){
-  const lane=Math.floor(Math.random()*LANE_COUNT);
-  const ch=TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
-  const mesh=buildTruck(ch);
-  const spawnZ=-58-Math.random()*22;
-  mesh.position.set(laneX(lane),0,spawnZ);
-  mesh.rotation.y=Math.PI;
+  // Zigzag stagger: alternate lanes and use increasing density with miles
+  _truckSpawnCount++;
+  const densityMod = Math.min(1, G.miles / 80);   // 0→1 over first 80 miles
+
+  // Zigzag pattern: L→R→L→R or specific stagger sequences
+  const zigzag = [0, 2, 1, 0, 2, 1, 2, 0, 1];     // repeating stagger
+  const lane = zigzag[_truckSpawnCount % zigzag.length];
+  _lastTruckLane = lane;
+
+  const ch = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
+  const mesh = buildTruck(ch);
+  const spawnZ = -62 - Math.random()*24;
+  mesh.position.set(laneX(lane), 0, spawnZ);
+  mesh.rotation.y = Math.PI;
   scene.add(mesh);
-  const spd=G.currentSpeed*(0.3+Math.random()*0.22);
-  liveTrucks.push({mesh,lane,speed:spd,passed:false,z:spawnZ});
-  if(G.miles>50&&Math.random()<0.32){
-    const lane2=(lane+1+Math.floor(Math.random()*(LANE_COUNT-1)))%LANE_COUNT;
-    const ch2=TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
-    const mesh2=buildTruck(ch2);
-    mesh2.position.set(laneX(lane2),0,spawnZ-20);
-    mesh2.rotation.y=Math.PI;
+
+  // Truck speed: slower relative to player at low miles, tightens at high miles
+  const spd = G.currentSpeed * (0.28 + Math.random()*0.18);
+  liveTrucks.push({mesh, lane, speed:spd, passed:false, z:spawnZ});
+
+  // After 25 miles: occasional paired trucks (different lanes, staggered Z)
+  if(G.miles > 25 && Math.random() < 0.28 + densityMod*0.25){
+    const lane2 = (lane + 1 + Math.floor(Math.random()*(LANE_COUNT-1))) % LANE_COUNT;
+    const ch2 = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
+    const mesh2 = buildTruck(ch2);
+    // Stagger Z: 18–28 units behind the first truck for weaving challenge
+    const staggerZ = spawnZ - (18 + Math.random()*10);
+    mesh2.position.set(laneX(lane2), 0, staggerZ);
+    mesh2.rotation.y = Math.PI;
     scene.add(mesh2);
-    liveTrucks.push({mesh:mesh2,lane:lane2,speed:G.currentSpeed*(0.3+Math.random()*0.22),passed:false,z:spawnZ-20});
+    liveTrucks.push({mesh:mesh2, lane:lane2, speed:G.currentSpeed*(0.28+Math.random()*0.18), passed:false, z:staggerZ});
+  }
+
+  // After 80 miles: triple convoy — 3 trucks across all lanes blocking passage
+  if(G.miles > 80 && Math.random() < 0.18 + densityMod*0.15){
+    const blockedLanes = [0,1,2];
+    const baseLane = blockedLanes[Math.floor(Math.random()*blockedLanes.length)];
+    for(let b=0; b<2; b++){
+      const bl = (baseLane + b + 1) % LANE_COUNT;
+      if(bl === lane) continue;
+      const ch3 = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
+      const m3 = buildTruck(ch3);
+      const bZ = spawnZ - (8 + b*14);
+      m3.position.set(laneX(bl), 0, bZ);
+      m3.rotation.y = Math.PI;
+      scene.add(m3);
+      liveTrucks.push({mesh:m3, lane:bl, speed:G.currentSpeed*(0.28+Math.random()*0.12), passed:false, z:bZ});
+    }
   }
 }
 
@@ -3457,8 +3689,25 @@ function update(dt){
 
   G.miles+=dz/40;
   G.score+=Math.floor(G.currentSpeed*dt*1.2);
-  G.speed=Math.min(ROAD_Z_SPEED_BASE*2.8*car.speed, G.baseSpeed+G.miles*0.12);
-  G.truckInterval=Math.max(0.7,2.2-G.miles*0.008);
+
+  // ─── PROGRESSIVE SPEED CURVE ───
+  // Phase 1 (0–30mi):   gentle ramp, player learns controls
+  // Phase 2 (30–80mi):  moderate ramp, trucks denser
+  // Phase 3 (80–150mi): fast highway feel, near-max speed
+  // Phase 4 (150mi+):   maximum intensity, truck convoys
+  const _maxSpd = ROAD_Z_SPEED_BASE * 3.2 * car.speed;
+  let _speedGain;
+  if(G.miles < 30)       _speedGain = G.miles * 0.18;          // slow build
+  else if(G.miles < 80)  _speedGain = 5.4 + (G.miles-30)*0.28; // medium ramp
+  else if(G.miles < 150) _speedGain = 19.4 + (G.miles-80)*0.38;// fast ramp
+  else                   _speedGain = 46.0 + (G.miles-150)*0.20;// taper to max
+  G.speed = Math.min(_maxSpd, G.baseSpeed + _speedGain);
+
+  // Truck interval: tighter with miles, minimum 0.5s at 150+ miles
+  G.truckInterval = Math.max(0.50, 2.4 - G.miles * 0.012);
+
+  // Pickup interval: more frequent as game progresses (player needs powerups)
+  G.pickupInterval = Math.max(4.5, 9.0 - G.miles * 0.025);
 
   if(G.miles>=G.nextStateMiles&&G.stateIndex<US_STATES.length-1){
     G.stateIndex++;
@@ -3573,10 +3822,23 @@ function update(dt){
 // ════════════════════════════════════════════════════
 // RENDER LOOP
 // ════════════════════════════════════════════════════
+let _lastFPSTime = 0;
+let _frameCount = 0;
+let _currentFPS = 60;
+
 function loop(ts){
   requestAnimationFrame(loop);
   const dt=Math.min((ts-lastTime)/1000,0.1);
   lastTime=ts;
+
+  // FPS tracking for DRS
+  _frameCount++;
+  if(ts - _lastFPSTime >= 1000){
+    _currentFPS = _frameCount;
+    _frameCount = 0;
+    _lastFPSTime = ts;
+    if(gamePhase==='playing') updateDRS(_currentFPS);
+  }
   accumulator+=dt;
   while(accumulator>=TICK){
     update(TICK);
