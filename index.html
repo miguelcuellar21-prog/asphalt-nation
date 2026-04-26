@@ -8,6 +8,11 @@
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="theme-color" content="#06040e"/>
   <title>Asphalt Nation</title>
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icons/icon-180.png"/>
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png"/>
+  <meta name="apple-mobile-web-app-title" content="Asphalt"/>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet"/>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -4735,5 +4740,15 @@ if(loadErr) loadErr.style.display='none';
   </div>
   <button onclick="location.reload()" style="margin-top:24px;padding:14px 32px;background:#ffcc00;color:#06040e;border:none;border-radius:8px;font-family:Orbitron,monospace;font-size:13px;font-weight:700;letter-spacing:2px;cursor:pointer">RETRY</button>
 </div>
+<!-- PWA Service Worker Registration -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./sw.js')
+        .then(function(reg) { console.log('[SW] Registered:', reg.scope); })
+        .catch(function(err) { console.warn('[SW] Registration failed:', err); });
+    });
+  }
+</script>
 </body>
 </html>
