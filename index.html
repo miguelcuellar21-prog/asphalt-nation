@@ -157,7 +157,7 @@
   <div id="hud-top">
     <div class="hp"><div class="hl">Miles</div><div class="hv gold" id="hm">0</div></div>
     <div class="hp" style="text-align:center"><div class="hl">Score</div><div class="hv" id="hs2">0</div></div>
-    <div class="hp" style="text-align:right"><div class="hl" style="display:flex;align-items:center;justify-content:flex-end;gap:6px">Lives <button id="mutebtn" onclick="const on=SFX.toggle();this.textContent=on?' 🔊':' 🔇';" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;padding:0;line-height:1;"> 🔊</button></div><div id="lives-row"></div></div>
+    <div class="hp" style="text-align:right"><div class="hl" style="display:flex;align-items:center;justify-content:flex-end;gap:6px">Lives <button id="mutebtn" onclick="const on=SFX.toggle();this.textContent=on?' 🔊':' 🔇';" style="background:none;border:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;padding:0;line-height:1;"> 🔊</button><button id="tiltbtn" onclick="toggleTiltMotion(this);" style="background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.22);border-radius:4px;color:rgba(255,255,255,0.75);font-size:10px;font-weight:700;letter-spacing:0.5px;cursor:pointer;padding:2px 5px;line-height:1.4;">TILT:ON</button></div><div id="lives-row"></div></div>
   </div>
   <div id="state-hud"></div>
   <div id="speedbar"><div id="speedfill" style="height:25%"></div></div>
@@ -720,20 +720,46 @@ function buildCar(colorHex, accentHex, scale=1){
   const rubberMat= () => new THREE.MeshStandardMaterial({color:0x0e0e0e, roughness:0.97, metalness:0.0});
   const rimMat   = () => new THREE.MeshStandardMaterial({color:0xdddddd, metalness:0.96, roughness:0.06});
 
-  // ── LOWER BODY SLAB (wide, flat, muscular) ──
-  const body = new THREE.Mesh(new THREE.BoxGeometry(2.00*s, 0.40*s, 4.10*s), bodyMat());
-  body.position.y = 0.50*s; body.castShadow=true; grp.add(body); // part 1
+  // ── LOWER BODY — smooth LatheGeometry shell for rounded sides ──
+  // Cross-section profile: bottom narrow -> widens to door -> tapers to top
+  const bodyPoints = [
+    new THREE.Vector2(0.70*s, 0.00*s),   // bottom centre-floor
+    new THREE.Vector2(0.94*s, 0.08*s),   // outward lip at sill
+    new THREE.Vector2(1.02*s, 0.22*s),   // widest point (door mid)
+    new THREE.Vector2(0.98*s, 0.38*s),   // shoulder
+    new THREE.Vector2(0.90*s, 0.52*s),   // waist line near glass
+    new THREE.Vector2(0.72*s, 0.62*s),   // roof edge
+    new THREE.Vector2(0.52*s, 0.68*s),   // roof centre
+    new THREE.Vector2(0.00*s, 0.70*s),   // roof peak (axis)
+  ];
+  // Lathe gives a rotationally symmetric shell — we only show the side half
+  const bodyLathe = new THREE.Mesh(
+    new THREE.LatheGeometry(bodyPoints, 16, 0, Math.PI*2),
+    bodyMat()
+  );
+  bodyLathe.castShadow = true;
+  grp.add(bodyLathe); // part 1 - smooth rounded body shell
 
-  // Body side curvature panels — CylinderGeometry half-shells on each side
-  for(const sx of [-1.0, 1.0]){
-    const sidePanel = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.22*s, 0.22*s, 4.10*s, 14, 1, false, 0, Math.PI),
-      bodyMat()
-    );
-    sidePanel.rotation.z = sx > 0 ? -Math.PI/2 : Math.PI/2;
-    sidePanel.rotation.y = Math.PI/2;
-    sidePanel.position.set(sx*0.99*s, 0.50*s, 0); sidePanel.castShadow=true; grp.add(sidePanel); // parts 2-3
-  }
+  // Elongate the lathe body along Z-axis to car length using ScaleZ
+  bodyLathe.scale.set(1, 1, 2.05); // stretch to full car length
+  bodyLathe.position.set(0, 0.00*s, 0);
+
+  // Front nose taper cap
+  const noseCap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.72*s, 14, 8, 0, Math.PI*2, 0, Math.PI*0.5),
+    bodyMat()
+  );
+  noseCap.scale.set(1, 0.78, 0.82);
+  noseCap.position.set(0, 0.10*s, 2.00*s); noseCap.castShadow=true; grp.add(noseCap); // part 2
+
+  // Rear tail taper cap
+  const tailCap = new THREE.Mesh(
+    new THREE.SphereGeometry(0.72*s, 14, 8, 0, Math.PI*2, 0, Math.PI*0.5),
+    bodyMat()
+  );
+  tailCap.scale.set(1, 0.72, 0.80);
+  tailCap.rotation.y = Math.PI;
+  tailCap.position.set(0, 0.10*s, -2.00*s); tailCap.castShadow=true; grp.add(tailCap); // part 3
 
   // ── HOOD — large curved dome over engine bay ──
   const hood = new THREE.Mesh(
@@ -765,70 +791,74 @@ function buildCar(colorHex, accentHex, scale=1){
   trunk.rotation.z = Math.PI/2; trunk.rotation.y = -Math.PI/2;
   trunk.position.set(0, 0.76*s, -1.32*s); trunk.castShadow=true; grp.add(trunk); // part 12
 
-  // ── CABIN — tapered greenhouse ──
-  // Lower cabin box
-  const cabinLow = new THREE.Mesh(new THREE.BoxGeometry(1.50*s, 0.30*s, 2.10*s),
-    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.78).getHex(), roughness:0.20, metalness:0.68}));
-  cabinLow.position.set(0, 0.95*s, -0.10*s); cabinLow.castShadow=true; grp.add(cabinLow); // part 13
-
-  // Upper cabin curved roof — tapered CylinderGeometry
-  const roof = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.48*s, 0.75*s, 1.52*s, 12, 1, false, 0, Math.PI),
-    bodyMat()
+  // ── CABIN GLASS GREENHOUSE — dark tinted upper shell ──
+  // The lathe body already forms the lower body. Add a glass greenhouse above.
+  const cabinPoints = [
+    new THREE.Vector2(0.72*s, 0.00*s), // base at waist
+    new THREE.Vector2(0.76*s, 0.10*s),
+    new THREE.Vector2(0.68*s, 0.28*s),
+    new THREE.Vector2(0.50*s, 0.44*s),
+    new THREE.Vector2(0.26*s, 0.54*s),
+    new THREE.Vector2(0.00*s, 0.56*s), // peak
+  ];
+  const greenhouse = new THREE.Mesh(
+    new THREE.LatheGeometry(cabinPoints, 14, 0, Math.PI*2),
+    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.82).getHex(),
+      roughness:0.12, metalness:0.72})
   );
-  roof.rotation.z = Math.PI/2; roof.rotation.y = Math.PI/2;
-  roof.position.set(0, 1.22*s, -0.10*s); roof.castShadow=true; grp.add(roof); // part 14
+  greenhouse.scale.set(1, 1, 1.45); // stretch along car length
+  greenhouse.position.set(0, 0.58*s, -0.08*s); greenhouse.castShadow=true; grp.add(greenhouse); // part 13
 
-  // Roof skin top-center cap strip
-  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(0.90*s, 0.10*s, 1.48*s),
-    bodyMat());
-  roofCap.position.set(0, 1.68*s, -0.10*s); grp.add(roofCap); // part 15
+  // Roof skin top-center cap strip (aerodynamic spine)
+  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(0.28*s, 0.06*s, 1.60*s),
+    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.70).getHex(), roughness:0.12, metalness:0.85}));
+  roofCap.position.set(0, 1.14*s, -0.08*s); grp.add(roofCap); // part 14-15
 
   // A-pillars (front cabin slope)
-  for(const sx of [-0.74*s, 0.74*s]){
-    const ap = new THREE.Mesh(new THREE.BoxGeometry(0.08*s, 0.58*s, 0.08*s),
+  for(const sx of [-0.70*s, 0.70*s]){
+    const ap = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.48*s, 0.07*s),
       darkMat(darkBodyC.getHex()));
-    ap.position.set(sx, 1.02*s, 0.94*s); ap.rotation.z = (sx>0?0.12:-0.12); grp.add(ap); // parts 16-17
+    ap.position.set(sx, 0.84*s, 0.76*s); ap.rotation.z = (sx>0?0.14:-0.14); grp.add(ap); // parts 16-17
   }
 
   // B-pillars
-  for(const sx of [-0.74*s, 0.74*s]){
-    const bp = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.50*s, 0.07*s),
+  for(const sx of [-0.70*s, 0.70*s]){
+    const bp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.44*s, 0.06*s),
       darkMat(darkBodyC.getHex()));
-    bp.position.set(sx, 1.00*s, -0.32*s); grp.add(bp); // parts 18-19
+    bp.position.set(sx, 0.84*s, -0.26*s); grp.add(bp); // parts 18-19
   }
 
   // C-pillars (rear cabin slope)
-  for(const sx of [-0.74*s, 0.74*s]){
-    const cp = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.52*s, 0.08*s),
+  for(const sx of [-0.70*s, 0.70*s]){
+    const cp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.46*s, 0.07*s),
       darkMat(darkBodyC.getHex()));
-    cp.position.set(sx, 1.02*s, -1.08*s); cp.rotation.z = (sx>0?-0.10:0.10); grp.add(cp); // parts 20-21
+    cp.position.set(sx, 0.84*s, -0.92*s); cp.rotation.z = (sx>0?-0.12:0.12); grp.add(cp); // parts 20-21
   }
 
   // ── WINDSHIELD (angled) ──
-  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.34*s, 0.58*s), glassMat(0.82));
-  ws.position.set(0, 1.14*s, 0.90*s); ws.rotation.x = -0.40; grp.add(ws); // part 22
-  const wsFrame = new THREE.Mesh(new THREE.BoxGeometry(1.42*s, 0.66*s, 0.05*s), chromeMat());
-  wsFrame.position.set(0, 1.14*s, 0.895*s); wsFrame.rotation.x = -0.40; grp.add(wsFrame); // part 23
-  const sunStrip = new THREE.Mesh(new THREE.PlaneGeometry(1.34*s, 0.15*s),
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.30*s, 0.50*s), glassMat(0.82));
+  ws.position.set(0, 0.98*s, 0.78*s); ws.rotation.x = -0.50; grp.add(ws); // part 22
+  const wsFrame = new THREE.Mesh(new THREE.BoxGeometry(1.38*s, 0.58*s, 0.05*s), chromeMat());
+  wsFrame.position.set(0, 0.98*s, 0.775*s); wsFrame.rotation.x = -0.50; grp.add(wsFrame); // part 23
+  const sunStrip = new THREE.Mesh(new THREE.PlaneGeometry(1.30*s, 0.14*s),
     new THREE.MeshStandardMaterial({color:0x001020, transparent:true, opacity:0.96, roughness:0.05, metalness:0.9}));
-  sunStrip.position.set(0, 1.36*s, 0.87*s); sunStrip.rotation.x = -0.40; grp.add(sunStrip); // part 24
+  sunStrip.position.set(0, 1.18*s, 0.74*s); sunStrip.rotation.x = -0.50; grp.add(sunStrip); // part 24
 
   // ── REAR WINDOW ──
-  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.28*s, 0.48*s), glassMat(0.74));
-  rw.position.set(0, 1.10*s, -1.12*s); rw.rotation.x = 0.34; grp.add(rw); // part 25
-  const rwFrame = new THREE.Mesh(new THREE.BoxGeometry(1.36*s, 0.56*s, 0.05*s), chromeMat());
-  rwFrame.position.set(0, 1.10*s, -1.115*s); rwFrame.rotation.x = 0.34; grp.add(rwFrame); // part 26
+  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.24*s, 0.44*s), glassMat(0.74));
+  rw.position.set(0, 0.96*s, -0.98*s); rw.rotation.x = 0.44; grp.add(rw); // part 25
+  const rwFrame = new THREE.Mesh(new THREE.BoxGeometry(1.32*s, 0.52*s, 0.05*s), chromeMat());
+  rwFrame.position.set(0, 0.96*s, -0.975*s); rwFrame.rotation.x = 0.44; grp.add(rwFrame); // part 26
 
   // ── SIDE WINDOWS ──
-  for(const sx of [-0.95*s, 0.95*s]){
-    const sw1 = new THREE.Mesh(new THREE.PlaneGeometry(0.88*s, 0.38*s), glassMat(0.74));
-    sw1.rotation.y = Math.PI/2; sw1.position.set(sx, 1.08*s, 0.28*s); grp.add(sw1); // parts 27-28
-    const sw2 = new THREE.Mesh(new THREE.PlaneGeometry(0.62*s, 0.34*s), glassMat(0.70));
-    sw2.rotation.y = Math.PI/2; sw2.position.set(sx, 1.06*s, -0.58*s); grp.add(sw2); // parts 29-30
+  for(const sx of [-0.94*s, 0.94*s]){
+    const sw1 = new THREE.Mesh(new THREE.PlaneGeometry(0.82*s, 0.34*s), glassMat(0.74));
+    sw1.rotation.y = Math.PI/2; sw1.position.set(sx, 0.96*s, 0.22*s); grp.add(sw1); // parts 27-28
+    const sw2 = new THREE.Mesh(new THREE.PlaneGeometry(0.58*s, 0.30*s), glassMat(0.70));
+    sw2.rotation.y = Math.PI/2; sw2.position.set(sx, 0.94*s, -0.50*s); grp.add(sw2); // parts 29-30
     // Chrome window surround
-    const wTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.46*s, 1.60*s), chromeMat());
-    wTrim.position.set(sx, 1.08*s, -0.14*s); grp.add(wTrim); // parts 31-32
+    const wTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.42*s, 1.50*s), chromeMat());
+    wTrim.position.set(sx, 0.96*s, -0.14*s); grp.add(wTrim); // parts 31-32
   }
 
   // ── FENDER FLARES — prominent CylinderGeometry half-arches ──
@@ -975,15 +1005,15 @@ function buildCar(colorHex, accentHex, scale=1){
 
   // ── SPOILER — wide flat wing with end plates ──
   const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.68*s, 0.09*s, 0.40*s), accentMat());
-  spoiler.position.set(0, 1.40*s, -1.08*s); grp.add(spoiler); // part 87
+  spoiler.position.set(0, 1.22*s, -1.02*s); grp.add(spoiler); // part 87
   for(const sx of [-0.84*s, 0.84*s]){
-    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.09*s, 0.24*s, 0.40*s),
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.09*s, 0.22*s, 0.40*s),
       new THREE.MeshStandardMaterial({color:accentC.clone().multiplyScalar(0.72).getHex(), roughness:0.35}));
-    ep.position.set(sx, 1.33*s, -1.08*s); grp.add(ep); // parts 88-89
+    ep.position.set(sx, 1.16*s, -1.02*s); grp.add(ep); // parts 88-89
     // Aluminum upright strut
-    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.034*s, 0.034*s, 0.32*s, 6),
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.034*s, 0.034*s, 0.28*s, 6),
       new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.84, roughness:0.18}));
-    up.position.set(sx, 1.22*s, -1.08*s); grp.add(up); // parts 90-91
+    up.position.set(sx, 1.06*s, -1.02*s); grp.add(up); // parts 90-91
   }
 
   // ── SIDE MIRRORS ──
@@ -991,14 +1021,14 @@ function buildCar(colorHex, accentHex, scale=1){
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.030*s, 0.030*s, 0.30*s, 7),
       darkMat(darkBodyC.getHex()));
     arm.rotation.z = Math.PI/2;
-    arm.position.set(sx + (sx>0 ? 0.15*s : -0.15*s), 1.10*s, 0.74*s); grp.add(arm); // parts 92-93
+    arm.position.set(sx + (sx>0 ? 0.15*s : -0.15*s), 0.92*s, 0.62*s); grp.add(arm); // parts 92-93
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.26*s, 0.16*s, 0.10*s),
       darkMat(darkBodyC.getHex()));
-    head.position.set(sx + (sx>0 ? 0.22*s : -0.22*s), 1.09*s, 0.74*s); grp.add(head); // parts 94-95
+    head.position.set(sx + (sx>0 ? 0.22*s : -0.22*s), 0.91*s, 0.62*s); grp.add(head); // parts 94-95
     const mirrorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.20*s, 0.12*s),
       new THREE.MeshStandardMaterial({color:0x88aabb, roughness:0.03, metalness:0.90}));
     mirrorGlass.rotation.y = sx>0 ? Math.PI/2 : -Math.PI/2;
-    mirrorGlass.position.set(sx + (sx>0 ? 0.24*s : -0.24*s), 1.09*s, 0.74*s); grp.add(mirrorGlass); // parts 96-97
+    mirrorGlass.position.set(sx + (sx>0 ? 0.24*s : -0.24*s), 0.91*s, 0.62*s); grp.add(mirrorGlass); // parts 96-97
   }
 
   // ── WHEELS — 4 corners, large with 5 spokes ──
@@ -2709,16 +2739,31 @@ document.addEventListener('touchend',e=>{
 
 // ── Tilt / Gyroscope (deviceorientation) ──
 let _tiltEnabled = false;
+let _tiltMotionEnabled = true;  // user-controllable toggle (ON by default)
 let _tiltBaseline = null;   // calibration: gamma at game start
 let _tiltLane = 1;          // last lane assigned by tilt
 const TILT_DEAD = 12;       // degrees dead zone each side
 const TILT_FULL = 30;       // degrees for full-lane commit
+
+function toggleTiltMotion(btn){
+  _tiltMotionEnabled = !_tiltMotionEnabled;
+  SAVE.tiltMotionEnabled = _tiltMotionEnabled;
+  if(btn) btn.textContent = _tiltMotionEnabled ? 'TILT:ON' : 'TILT:OFF';
+  if(btn) btn.style.color = _tiltMotionEnabled ? 'rgba(255,255,255,0.75)' : 'rgba(255,120,80,0.90)';
+  if(btn) btn.style.borderColor = _tiltMotionEnabled ? 'rgba(255,255,255,0.22)' : 'rgba(255,120,80,0.55)';
+  // Reset visual dot when disabled
+  if(!_tiltMotionEnabled && tiltDot){
+    tiltDot.style.left = '50%';
+    tiltDot.style.background = '#ffcc00';
+  }
+}
 
 const tiltDot = document.getElementById('tilt-dot');
 const tiltBar = document.getElementById('tilt-bar');
 
 function _applyTilt(gamma){
   if(gamePhase!=='playing') return;
+  if(!_tiltMotionEnabled) return;  // respect user toggle
   if(_tiltBaseline===null) _tiltBaseline=gamma;
   const lean=gamma-_tiltBaseline;
 
