@@ -341,12 +341,13 @@ const US_STATES = [
 ];
 
 const CARS = [
-  {id:'racer',  name:'STREET RACER', color:0xcc2222, accent:0xffcc00, speed:1.0, handling:1.0, accel:1.0, price:0,   unlocked:true},
-  {id:'muscle', name:'MUSCLE CAR',   color:0x1a44cc, accent:0xff6600, speed:0.9, handling:0.8, accel:1.2, price:150, unlocked:false},
-  {id:'super',  name:'SUPERCAR',     color:0xcc8800, accent:0xffffff, speed:1.3, handling:1.2, accel:1.1, price:300, unlocked:false},
-  {id:'pickup', name:'PICKUP',       color:0x228844, accent:0xffcc00, speed:0.8, handling:0.9, accel:0.9, price:100, unlocked:false},
-  {id:'turbo',  name:'TURBO GT',     color:0x882288, accent:0x00ffcc, speed:1.2, handling:1.3, accel:1.3, price:500, unlocked:false},
-  {id:'classic',name:'CLASSIC',      color:0xcc4400, accent:0xffffaa, speed:0.85,handling:1.0, accel:0.8, price:200, unlocked:false},
+  // Colors from official Ferrari 2024 SF90 palette (Section 1 of PBR spec)
+  {id:'racer',  name:'ROSSO CORSA',    color:0xCC0000, accent:0xFFD700, speed:1.0, handling:1.0, accel:1.0, price:0,   unlocked:true},
+  {id:'muscle', name:'BLU ABU DHABI',  color:0x1B3A5C, accent:0xB8B8B8, speed:0.9, handling:0.8, accel:1.2, price:150, unlocked:false},
+  {id:'super',  name:'GIALLO MODENA',  color:0xFFD700, accent:0x0A0A0A, speed:1.3, handling:1.2, accel:1.1, price:300, unlocked:false},
+  {id:'pickup', name:'VERDE BRITISH',  color:0x1F4D2C, accent:0xFFD700, speed:0.8, handling:0.9, accel:0.9, price:100, unlocked:false},
+  {id:'turbo',  name:'BIANCO AVUS',    color:0xEFEFEC, accent:0xCC0000, speed:1.2, handling:1.3, accel:1.3, price:500, unlocked:false},
+  {id:'classic',name:'NERO DAYTONA',   color:0x141414, accent:0xB8B8B8, speed:0.85,handling:1.0, accel:0.8, price:200, unlocked:false},
 ];
 
 // ════════════════════════════════════════════════════
@@ -390,12 +391,15 @@ scene.add(sun);
 const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x443322, 0.6);
 scene.add(hemiLight);
 // Rim light — strong separation from behind
-const rimLight = new THREE.DirectionalLight(0x334466, 0.9);
+const rimLight = new THREE.DirectionalLight(0x4466aa, 1.1); // cooler blue rim
 rimLight.position.set(0, 10, 22);
 scene.add(rimLight);
-// Player headlight point
-const headlight = new THREE.PointLight(0xfffaf0, 1.8, 55);
+// Player headlight — SF90 xenon white (Setup B spec)
+const headlight = new THREE.PointLight(0xFFF5E0, 2.2, 65);
 scene.add(headlight);
+// Undercar warm ground bounce (makes paint clearcoat glow from below)
+const carFill = new THREE.PointLight(0xff7733, 0.6, 10);
+scene.add(carFill);
 // Warm fill from road bounce
 const fillLight = new THREE.PointLight(0xff8833, 0.55, 24);
 fillLight.position.set(0, -1, 6);
@@ -404,6 +408,33 @@ scene.add(fillLight);
 const fill2 = new THREE.PointLight(0x6688aa, 0.3, 30);
 fill2.position.set(-8, 4, 0);
 scene.add(fill2);
+
+// ─── ENVIRONMENT MAP (PMREMGenerator) — enables clearcoat + paint reflections ───
+// Build a simple gradient envMap from scene lights so MeshPhysicalMaterial clearcoat reflects it
+(function buildEnvMap(){
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  pmrem.compileEquirectangularShader();
+  // Create a procedural gradient sky as a small cube render target
+  // Use fromScene with a simple colored background
+  const skyScene = new THREE.Scene();
+  // Sky gradient: warm horizon, blue zenith
+  const skyGeo = new THREE.SphereGeometry(50, 16, 8);
+  const skyMat = new THREE.MeshBasicMaterial({
+    color: 0x87CEEB,
+    side: THREE.BackSide
+  });
+  skyScene.add(new THREE.Mesh(skyGeo, skyMat));
+  // Warm sun disc
+  const sunGeo = new THREE.SphereGeometry(3, 8, 6);
+  const sunMesh = new THREE.Mesh(sunGeo,
+    new THREE.MeshBasicMaterial({color:0xFFF0CC}));
+  sunMesh.position.set(20, 28, -30);
+  skyScene.add(sunMesh);
+  const envRT = pmrem.fromScene(skyScene, 0.04, 0.1, 200);
+  scene.environment = envRT.texture;
+  scene.environment.mapping = THREE.EquirectangularReflectionMapping;
+  pmrem.dispose();
+})();
 
 // ─── FOG ───
 scene.fog = new THREE.FogExp2(0x2a1a08, 0.014);
@@ -593,7 +624,16 @@ function makeAsphaltTexture(){
 }
 
 const asphaltTex = makeAsphaltTexture();
-const roadMat = new THREE.MeshStandardMaterial({color:0x1a1a22, map:asphaltTex, roughness:0.88, metalness:0.06, envMapIntensity:0.3});
+// Road — slightly physical for wet-look sheen from headlights
+const roadMat = new THREE.MeshPhysicalMaterial({
+  color: 0x1a1a22,
+  map: asphaltTex,
+  roughness: 0.84,
+  metalness: 0.04,
+  clearcoat: 0.08,            // subtle wet-road sheen
+  clearcoatRoughness: 0.60,
+  envMapIntensity: 0.5,
+});
 const shoulderMat = new THREE.MeshStandardMaterial({color:0xb8ae90, roughness:0.97});
 // Lane lines — bright with stronger emissive so they glow at night
 const lineMat = new THREE.MeshStandardMaterial({color:0xffee00, roughness:0.2, emissive:new THREE.Color(0xffdd00), emissiveIntensity:1.8});
@@ -712,13 +752,78 @@ function buildCar(colorHex, accentHex, scale=1){
   const bodyC    = new THREE.Color(colorHex);
   const accentC  = new THREE.Color(accentHex);
   const darkBodyC= bodyC.clone().multiplyScalar(0.50);
-  const bodyMat  = () => new THREE.MeshStandardMaterial({color:colorHex, roughness:0.06, metalness:0.90, envMapIntensity:1.6});
-  const darkMat  = (c=0x111111) => new THREE.MeshStandardMaterial({color:c, roughness:0.55, metalness:0.25});
-  const chromeMat= () => new THREE.MeshStandardMaterial({color:0xeeeeff, metalness:0.98, roughness:0.04, envMapIntensity:1.8});
-  const glassMat = (op=0.72) => new THREE.MeshStandardMaterial({color:0x0a2a44, transparent:true, opacity:op, roughness:0.04, metalness:0.9});
-  const accentMat= () => new THREE.MeshStandardMaterial({color:accentHex, roughness:0.30, metalness:0.60});
-  const rubberMat= () => new THREE.MeshStandardMaterial({color:0x0e0e0e, roughness:0.97, metalness:0.0});
-  const rimMat   = () => new THREE.MeshStandardMaterial({color:0xdddddd, metalness:0.96, roughness:0.06});
+  // ─── PBR MATERIALS — Ferrari SF90 Spec (metalness/roughness/clearcoat) ───
+  // Body paint: dielectric (metalness 0.0), mirror lacquer (roughness 0.09), full clearcoat
+  const bodyMat  = () => new THREE.MeshPhysicalMaterial({
+    color: colorHex,
+    metalness: 0.0,            // paint is dielectric, not metal
+    roughness: 0.09,           // mirror-smooth lacquer
+    clearcoat: 1.0,            // full Ferrari clearcoat layer
+    clearcoatRoughness: 0.07,  // slightly imperfect clearcoat
+    envMapIntensity: 2.2,      // strong environment reflections
+    reflectivity: 0.95,
+  });
+  // Dark body panels: slightly rougher, still clearcoated
+  const darkMat  = (c=0x111111) => new THREE.MeshPhysicalMaterial({
+    color: c,
+    metalness: 0.0,
+    roughness: 0.55,
+    clearcoat: 0.2,
+    clearcoatRoughness: 0.4,
+    envMapIntensity: 0.8,
+  });
+  // Chrome: metalness 1.0, near-zero roughness (exhaust, badge surround)
+  const chromeMat= () => new THREE.MeshPhysicalMaterial({
+    color: 0xEEEEFF,
+    metalness: 1.0,
+    roughness: 0.03,
+    envMapIntensity: 2.5,
+    reflectivity: 1.0,
+  });
+  // Glass: deep tinted, high transmission
+  const glassMat = (op=0.72) => new THREE.MeshPhysicalMaterial({
+    color: 0x0a1a2e,
+    transparent: true,
+    opacity: op,
+    metalness: 0.0,
+    roughness: 0.04,
+    envMapIntensity: 1.8,
+    reflectivity: 0.9,
+  });
+  // Accent (spoiler, sills): metallic painted
+  const accentMat= () => new THREE.MeshPhysicalMaterial({
+    color: accentHex,
+    metalness: 0.55,
+    roughness: 0.22,
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 1.6,
+  });
+  // Rubber (tires): near-zero metalness, very rough
+  const rubberMat= () => new THREE.MeshPhysicalMaterial({
+    color: 0x0e0e0e,
+    metalness: 0.0,
+    roughness: 0.95,
+    envMapIntensity: 0.1,
+  });
+  // Alloy rim: polished aluminium
+  const rimMat   = () => new THREE.MeshPhysicalMaterial({
+    color: 0xD0D0D8,
+    metalness: 0.96,
+    roughness: 0.06,
+    clearcoat: 0.4,
+    clearcoatRoughness: 0.05,
+    envMapIntensity: 2.0,
+  });
+  // Carbon fibre (roof, mirrors, splitter, diffuser)
+  const carbonMat= () => new THREE.MeshPhysicalMaterial({
+    color: 0x121212,
+    metalness: 0.0,
+    roughness: 0.18,
+    clearcoat: 0.95,           // always clearcoated
+    clearcoatRoughness: 0.04,
+    envMapIntensity: 1.8,
+  });
 
   // ── LOWER BODY — CapsuleGeometry pill along Z gives perfectly smooth curved sides ──
   // CapsuleGeometry(radius, length, capSeg, radSeg) — r155 supported
@@ -751,10 +856,10 @@ function buildCar(colorHex, accentHex, scale=1){
   cabin.castShadow = true;
   grp.add(cabin);
 
-  // Hood spine ridge (runs front-to-back over engine bay)
+  // Hood spine ridge — carbon fibre
   const spine = new THREE.Mesh(
     new THREE.BoxGeometry(0.10*s, 0.05*s, 1.70*s),
-    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.68).getHex(), roughness:0.12, metalness:0.85})
+    carbonMat()
   );
   spine.position.set(0, 0.89*s, 0.95*s);
   grp.add(spine);
@@ -884,8 +989,8 @@ function buildCar(colorHex, accentHex, scale=1){
     bc.position.set(bx, 0.28*s, 1.96*s);
     grp.add(bc);
   }
-  // Front splitter
-  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.05*s, 0.24*s), darkMat(0x181818));
+  // Front splitter — carbon fibre
+  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.05*s, 0.24*s), carbonMat());
   splitter.position.set(0, 0.07*s, 1.95*s);
   grp.add(splitter);
   // DRL strips
@@ -924,13 +1029,13 @@ function buildCar(colorHex, accentHex, scale=1){
     bc.position.set(bx, 0.28*s, -1.96*s);
     grp.add(bc);
   }
-  // Diffuser
-  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.52*s, 0.14*s, 0.18*s), darkMat(0x141414));
+  // Diffuser — carbon fibre
+  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.52*s, 0.14*s, 0.18*s), carbonMat());
   diff.position.set(0, 0.07*s, -1.96*s);
   grp.add(diff);
-  // Diffuser fins
+  // Diffuser fins — carbon fibre
   for(let f=0; f<6; f++){
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.14*s, 0.20*s), darkMat(0x2a2a2a));
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.14*s, 0.20*s), carbonMat());
     fin.position.set(-0.64*s + f*0.25*s, 0.07*s, -1.96*s);
     grp.add(fin);
   }
@@ -989,17 +1094,17 @@ function buildCar(colorHex, accentHex, scale=1){
     grp.add(up);
   }
 
-  // ── SIDE MIRRORS ──
+  // ── SIDE MIRRORS — carbon caps with chrome glass ──
   for(const sx of [-0.90*s, 0.90*s]){
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.028*s, 0.028*s, 0.28*s, 7), darkMat(darkBodyC.getHex()));
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.028*s, 0.028*s, 0.28*s, 7), carbonMat());
     arm.rotation.z = Math.PI/2;
     arm.position.set(sx + (sx>0 ? 0.14*s : -0.14*s), 0.96*s, 0.56*s);
     grp.add(arm);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24*s, 0.14*s, 0.09*s), darkMat(darkBodyC.getHex()));
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24*s, 0.14*s, 0.09*s), carbonMat());
     head.position.set(sx + (sx>0 ? 0.20*s : -0.20*s), 0.95*s, 0.56*s);
     grp.add(head);
     const mirrorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.18*s, 0.11*s),
-      new THREE.MeshStandardMaterial({color:0x88aabb, roughness:0.03, metalness:0.92}));
+      new THREE.MeshPhysicalMaterial({color:0x88aabb, roughness:0.03, metalness:0.92, envMapIntensity:2.0, reflectivity:0.95}));
     mirrorGlass.rotation.y = sx>0 ? Math.PI/2 : -Math.PI/2;
     mirrorGlass.position.set(sx + (sx>0 ? 0.22*s : -0.22*s), 0.95*s, 0.56*s);
     grp.add(mirrorGlass);
@@ -1119,21 +1224,22 @@ function buildTruck(colorHex){
   const tC = new THREE.Color(colorHex);
   const darkTruck = tC.clone().multiplyScalar(0.50);
   const midTruck  = tC.clone().multiplyScalar(0.72);
-  const chromeMat = () => new THREE.MeshStandardMaterial({color:0xeeeeff, metalness:0.98, roughness:0.04, envMapIntensity:1.8});
-  const glassMat  = () => new THREE.MeshStandardMaterial({color:0x0a1e30, transparent:true, opacity:0.82, roughness:0.03, metalness:0.92});
-  const rubberMat = () => new THREE.MeshStandardMaterial({color:0x0e0e0e, roughness:0.96, metalness:0.0});
-  const steelMat  = (c=0x555555) => new THREE.MeshStandardMaterial({color:c, metalness:0.75, roughness:0.35});
+  // Truck PBR materials — upgraded to MeshPhysicalMaterial
+  const chromeMat = () => new THREE.MeshPhysicalMaterial({color:0xEEEEFF, metalness:1.0, roughness:0.03, envMapIntensity:2.5, reflectivity:1.0});
+  const glassMat  = () => new THREE.MeshPhysicalMaterial({color:0x0a1e30, transparent:true, opacity:0.82, roughness:0.04, metalness:0.0, envMapIntensity:1.8, reflectivity:0.9});
+  const rubberMat = () => new THREE.MeshPhysicalMaterial({color:0x0e0e0e, roughness:0.95, metalness:0.0, envMapIntensity:0.1});
+  const steelMat  = (c=0x555555) => new THREE.MeshPhysicalMaterial({color:c, metalness:0.82, roughness:0.28, clearcoat:0.2, clearcoatRoughness:0.3, envMapIntensity:1.4});
 
-  // ── TRAILER BODY — long rectangular with rounded corner columns ──
+  // ── TRAILER BODY — PBR painted metal
   const trailer = new THREE.Mesh(new THREE.BoxGeometry(2.14, 2.36, 7.50),
-    new THREE.MeshStandardMaterial({color:colorHex, roughness:0.68, metalness:0.24}));
+    new THREE.MeshPhysicalMaterial({color:colorHex, roughness:0.55, metalness:0.30, clearcoat:0.3, clearcoatRoughness:0.45, envMapIntensity:1.2}));
   trailer.position.set(0, 1.38, -1.65); trailer.castShadow=true; grp.add(trailer);
 
   // Rounded trailer corner columns (8 total — 4 corners × top/bottom, using vertical cylinders)
   for(const cx of [-1.07, 1.07]){
     for(const cz of [-5.40, 2.10]){
       const col = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 2.38, 12),
-        new THREE.MeshStandardMaterial({color:darkTruck.getHex(), metalness:0.45, roughness:0.50}));
+        new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), metalness:0.45, roughness:0.50}));
       col.position.set(cx, 1.38, cz); grp.add(col);
     }
   }
@@ -1141,7 +1247,7 @@ function buildTruck(colorHex){
   // Horizontal corrugation ribs on trailer sides
   for(let rib=0; rib<9; rib++){
     const r = new THREE.Mesh(new THREE.BoxGeometry(2.18, 0.040, 7.54),
-      new THREE.MeshStandardMaterial({color:tC.clone().multiplyScalar(0.40).getHex(), roughness:0.95}));
+      new THREE.MeshPhysicalMaterial({color:tC.clone().multiplyScalar(0.40).getHex(), roughness:0.95}));
     r.position.set(0, 0.32 + rib*0.30, -1.65); grp.add(r);
   }
 
@@ -1149,7 +1255,7 @@ function buildTruck(colorHex){
   for(let vr=0; vr<6; vr++){
     for(const sx of [-1.07, 1.07]){
       const vrib = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.36, 0.06),
-        new THREE.MeshStandardMaterial({color:darkTruck.getHex(), metalness:0.30, roughness:0.70}));
+        new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), metalness:0.30, roughness:0.70}));
       vrib.position.set(sx, 1.38, -5.20 + vr*1.42); grp.add(vrib);
     }
   }
@@ -1161,12 +1267,12 @@ function buildTruck(colorHex){
 
   // ── TRAILER UNDERCARRIAGE ──
   const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.20, 7.30),
-    new THREE.MeshStandardMaterial({color:0x1e1e1e, roughness:0.92}));
+    new THREE.MeshPhysicalMaterial({color:0x1e1e1e, roughness:0.92}));
   chassis.position.set(0, 0.10, -1.65); grp.add(chassis);
   // Cross-members
   for(let xm=0; xm<6; xm++){
     const xmem = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.12, 0.14),
-      new THREE.MeshStandardMaterial({color:0x2e2e2e, roughness:0.92}));
+      new THREE.MeshPhysicalMaterial({color:0x2e2e2e, roughness:0.92}));
     xmem.position.set(0, 0.16, -5.20 + xm*1.20); grp.add(xmem);
   }
 
@@ -1183,11 +1289,11 @@ function buildTruck(colorHex){
   // ── REAR BARN DOORS ──
   for(const dz of [-5.42, -5.48]){
     const door = new THREE.Mesh(new THREE.BoxGeometry(2.02, 2.18, 0.06),
-      new THREE.MeshStandardMaterial({color:midTruck.getHex(), roughness:0.70}));
+      new THREE.MeshPhysicalMaterial({color:midTruck.getHex(), roughness:0.70}));
     door.position.set(0, 1.38, dz); grp.add(door);
   }
   const doorDiv = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.18, 0.12),
-    new THREE.MeshStandardMaterial({color:0x1e1e1e, roughness:0.90}));
+    new THREE.MeshPhysicalMaterial({color:0x1e1e1e, roughness:0.90}));
   doorDiv.position.set(0, 1.38, -5.44); grp.add(doorDiv);
   // Door hinges
   for(const hx of [-0.98, 0, 0.98]){
@@ -1207,7 +1313,7 @@ function buildTruck(colorHex){
   for(const tz of [-4.0,-2.4,-0.8,0.8]){
     for(const sx of [-1.08, 1.08]){
       const ref = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.28),
-        new THREE.MeshStandardMaterial({color:0xff6600,
+        new THREE.MeshPhysicalMaterial({color:0xff6600,
           emissive:new THREE.Color(0xff5500), emissiveIntensity:2.5, roughness:0.15}));
       ref.position.set(sx, 0.28, tz); grp.add(ref);
     }
@@ -1215,21 +1321,21 @@ function buildTruck(colorHex){
   // Red trailer tail light reflectors
   for(const sx of [-1.00, 1.00]){
     const tRef = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.20, 0.08),
-      new THREE.MeshStandardMaterial({color:0xff2200, emissive:new THREE.Color(0xff1100), emissiveIntensity:3.0}));
+      new THREE.MeshPhysicalMaterial({color:0xff2200, emissive:new THREE.Color(0xff1100), emissiveIntensity:3.0}));
     tRef.position.set(sx, 1.00, -5.45); grp.add(tRef);
   }
 
   // ── CAB — aerodynamic rounded front, Peterbilt style ──
   const cabCol = midTruck.getHex();
   const cab = new THREE.Mesh(new THREE.BoxGeometry(2.04, 2.10, 2.48),
-    new THREE.MeshStandardMaterial({color:cabCol, roughness:0.48, metalness:0.32}));
+    new THREE.MeshPhysicalMaterial({color:cabCol, roughness:0.48, metalness:0.32}));
   cab.position.set(0, 1.26, 3.10); cab.castShadow=true; grp.add(cab);
 
   // Rounded vertical edges — 4 corner pillars
   for(const cx of [-1.02, 1.02]){
     for(const cz of [1.88, 4.28]){
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 2.12, 12),
-        new THREE.MeshStandardMaterial({color:darkTruck.getHex(), roughness:0.48, metalness:0.28}));
+        new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), roughness:0.48, metalness:0.28}));
       pillar.position.set(cx, 1.26, cz); grp.add(pillar);
     }
   }
@@ -1237,7 +1343,7 @@ function buildTruck(colorHex){
   // Cab roof contour — CylinderGeometry arc across top
   const roofArc = new THREE.Mesh(
     new THREE.CylinderGeometry(0.22, 0.22, 2.06, 12, 1, false, 0, Math.PI),
-    new THREE.MeshStandardMaterial({color:darkTruck.getHex(), roughness:0.50})
+    new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), roughness:0.50})
   );
   roofArc.rotation.z = Math.PI/2;
   roofArc.position.set(0, 2.30, 3.10); grp.add(roofArc);
@@ -1260,19 +1366,19 @@ function buildTruck(colorHex){
 
   // ── AERO FAIRING (roof deflector matching trailer height) ──
   const visor = new THREE.Mesh(new THREE.BoxGeometry(2.06, 0.30, 2.48),
-    new THREE.MeshStandardMaterial({color:darkTruck.getHex(), roughness:0.50}));
+    new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), roughness:0.50}));
   visor.position.set(0, 2.45, 3.10); grp.add(visor);
   const fairing = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.62, 0.30),
-    new THREE.MeshStandardMaterial({color:tC.clone().multiplyScalar(0.42).getHex(), roughness:0.50}));
+    new THREE.MeshPhysicalMaterial({color:tC.clone().multiplyScalar(0.42).getHex(), roughness:0.50}));
   fairing.position.set(0, 2.64, 4.16); fairing.rotation.x = 0.40; grp.add(fairing);
   // Fairing rounded top edge (cylinder)
   const fairingEdge = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.94, 12),
-    new THREE.MeshStandardMaterial({color:darkTruck.getHex(), roughness:0.60}));
+    new THREE.MeshPhysicalMaterial({color:darkTruck.getHex(), roughness:0.60}));
   fairingEdge.rotation.z = Math.PI/2; fairingEdge.position.set(0, 2.90, 4.28); grp.add(fairingEdge);
   // Side fairings (connecting cab to trailer)
   for(const sx of [-1.02, 1.02]){
     const sf = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.80, 1.50),
-      new THREE.MeshStandardMaterial({color:tC.clone().multiplyScalar(0.55).getHex(), roughness:0.60}));
+      new THREE.MeshPhysicalMaterial({color:tC.clone().multiplyScalar(0.55).getHex(), roughness:0.60}));
     sf.position.set(sx, 1.50, 1.60); grp.add(sf);
   }
 
@@ -1282,7 +1388,7 @@ function buildTruck(colorHex){
   const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.72, 0.96), glassMat());
   ws.position.set(0, 1.74, 4.27); grp.add(ws);
   const sunStrip = new THREE.Mesh(new THREE.PlaneGeometry(1.72, 0.20),
-    new THREE.MeshStandardMaterial({color:0x001528, transparent:true, opacity:0.96, metalness:0.9}));
+    new THREE.MeshPhysicalMaterial({color:0x001528, transparent:true, opacity:0.96, metalness:0.9}));
   sunStrip.position.set(0, 2.15, 4.27); grp.add(sunStrip);
   // Windshield wiper
   const wiper = new THREE.Mesh(new THREE.BoxGeometry(0.80, 0.04, 0.04),
@@ -1303,21 +1409,21 @@ function buildTruck(colorHex){
       steelMat(0x888888));
     arm.rotation.z = Math.PI/2; arm.position.set(sx+(sx>0?0.25:-0.25), 2.02, 3.94); grp.add(arm);
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.30, 0.11),
-      new THREE.MeshStandardMaterial({color:0x3a3a3a, roughness:0.42}));
+      new THREE.MeshPhysicalMaterial({color:0x3a3a3a, roughness:0.42}));
     head.position.set(sx+(sx>0?0.40:-0.40), 1.98, 3.94); grp.add(head);
     const mirGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.30, 0.22),
-      new THREE.MeshStandardMaterial({color:0x88aacc, roughness:0.04, metalness:0.90}));
+      new THREE.MeshPhysicalMaterial({color:0x88aacc, roughness:0.04, metalness:0.90}));
     mirGlass.rotation.y = sx>0 ? Math.PI/2 : -Math.PI/2;
     mirGlass.position.set(sx+(sx>0?0.44:-0.44), 1.98, 3.94); grp.add(mirGlass);
     // Lower wide convex mirror
     const convex = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.18, 0.08),
-      new THREE.MeshStandardMaterial({color:0x444444, roughness:0.35}));
+      new THREE.MeshPhysicalMaterial({color:0x444444, roughness:0.35}));
     convex.position.set(sx+(sx>0?0.40:-0.40), 1.74, 3.94); grp.add(convex);
   }
 
   // ── GRILLE — chrome horizontal bars + vertical dividers ──
   const grilleBase = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.62, 0.09),
-    new THREE.MeshStandardMaterial({color:0x999999, metalness:0.95, roughness:0.10}));
+    new THREE.MeshPhysicalMaterial({color:0x999999, metalness:0.95, roughness:0.10}));
   grilleBase.position.set(0, 0.90, 4.30); grp.add(grilleBase);
   for(let g=0; g<8; g++){
     const bar = new THREE.Mesh(new THREE.BoxGeometry(1.86, 0.040, 0.16), chromeMat());
@@ -1347,7 +1453,7 @@ function buildTruck(colorHex){
   bumpLow.position.set(0, 0.12, 4.35); grp.add(bumpLow);
   // Air dam below bumper
   const airDam = new THREE.Mesh(new THREE.BoxGeometry(1.80, 0.12, 0.20),
-    new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.90}));
+    new THREE.MeshPhysicalMaterial({color:0x1a1a1a, roughness:0.90}));
   airDam.position.set(0, 0.02, 4.34); grp.add(airDam);
 
   // ── EXHAUST STACKS — twin tall chromed with rain caps ──
@@ -1364,7 +1470,7 @@ function buildTruck(colorHex){
     tip.position.set(sx, 3.40, 2.10); grp.add(tip);
     // Rain cap (angled disc)
     const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.05, 10),
-      new THREE.MeshStandardMaterial({color:0x777777, metalness:0.82, roughness:0.20}));
+      new THREE.MeshPhysicalMaterial({color:0x777777, metalness:0.82, roughness:0.20}));
     cap.position.set(sx, 3.56, 2.14); cap.rotation.x = -0.30; grp.add(cap);
     // Cap pivot arm
     const capArm = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.22),
@@ -1376,22 +1482,22 @@ function buildTruck(colorHex){
   for(const hx of [-0.84, 0.84]){
     // Housing (clear lens)
     const housing = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.12),
-      new THREE.MeshStandardMaterial({color:0xcccccc, roughness:0.08, metalness:0.68}));
+      new THREE.MeshPhysicalMaterial({color:0xcccccc, roughness:0.08, metalness:0.68}));
     housing.position.set(hx, 1.17, 4.31); grp.add(housing);
     const led = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.09),
-      new THREE.MeshStandardMaterial({color:0xffffff,
+      new THREE.MeshPhysicalMaterial({color:0xffffff,
         emissive:new THREE.Color(0xffffcc), emissiveIntensity:6.5, roughness:0.0}));
     led.position.set(hx, 1.17, 4.32); grp.add(led);
     // DRL below headlight
     const drl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.07),
-      new THREE.MeshStandardMaterial({color:0xffffff, emissive:new THREE.Color(0xffffff), emissiveIntensity:4.0}));
+      new THREE.MeshPhysicalMaterial({color:0xffffff, emissive:new THREE.Color(0xffffff), emissiveIntensity:4.0}));
     drl.position.set(hx, 1.04, 4.32); grp.add(drl);
   }
 
   // Amber running lights on roof line (5 markers)
   for(let i=0; i<5; i++){
     const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.07, 8),
-      new THREE.MeshStandardMaterial({color:0xffaa00,
+      new THREE.MeshPhysicalMaterial({color:0xffaa00,
         emissive:new THREE.Color(0xffaa00), emissiveIntensity:3.0}));
     rl.position.set(-0.82 + i*0.41, 2.38, 4.20); grp.add(rl);
   }
@@ -1399,13 +1505,13 @@ function buildTruck(colorHex){
   // ── TAIL LIGHTS ──
   for(const tx of [-0.84, 0.84]){
     const tl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.09),
-      new THREE.MeshStandardMaterial({color:0xff2200,
+      new THREE.MeshPhysicalMaterial({color:0xff2200,
         emissive:new THREE.Color(0xff2200), emissiveIntensity:5.0}));
     tl.position.set(tx, 1.58, -5.46); grp.add(tl);
   }
   // Tail light bar
   const tlBar = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.09, 0.07),
-    new THREE.MeshStandardMaterial({color:0xff1100,
+    new THREE.MeshPhysicalMaterial({color:0xff1100,
       emissive:new THREE.Color(0xff1100), emissiveIntensity:2.8}));
   tlBar.position.set(0, 1.76, -5.48); grp.add(tlBar);
 
@@ -1429,15 +1535,15 @@ function buildTruck(colorHex){
     tire.castShadow=true; grp.add(tire);
     // Sidewall torus
     const sw = new THREE.Mesh(new THREE.TorusGeometry(tireR*0.84, 0.065, 10, 18),
-      new THREE.MeshStandardMaterial({color:0x111111, roughness:0.97}));
+      new THREE.MeshPhysicalMaterial({color:0x111111, roughness:0.97}));
     sw.rotation.y = Math.PI/2; sw.position.set(wx + side*tireW*0.52, tireR, wz); grp.add(sw);
     // Inner sidewall
     const sw2 = new THREE.Mesh(new THREE.TorusGeometry(tireR*0.84, 0.065, 10, 18),
-      new THREE.MeshStandardMaterial({color:0x111111, roughness:0.97}));
+      new THREE.MeshPhysicalMaterial({color:0x111111, roughness:0.97}));
     sw2.rotation.y = Math.PI/2; sw2.position.set(wx - side*tireW*0.52, tireR, wz); grp.add(sw2);
     // Alloy hub disc
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.11, 14),
-      new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.86, roughness:0.16}));
+      new THREE.MeshPhysicalMaterial({color:0xaaaaaa, metalness:0.86, roughness:0.16}));
     hub.rotation.z = Math.PI/2; hub.position.set(wx + side*tireW*0.55, tireR, wz); grp.add(hub);
     // 8 lug bolts
     for(let b=0; b<8; b++){
@@ -3197,6 +3303,7 @@ function update(dt){
   sunDisc.position.x += (camera.position.x*0.05 - sunDisc.position.x*0.05)*0.1;
 
   headlight.position.set(G.playerX, 3.5, 5);
+  carFill.position.set(G.playerX, 0.2, 3.5); // undercar warm bounce follows player
   fillLight.position.set(G.playerX, -0.5, 4);
   fill2.position.set(G.playerX - 8, 4, 0);
 
