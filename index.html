@@ -266,7 +266,7 @@ const ROAD_HALF = (LANE_COUNT * LANE_WIDTH) / 2;
 const ROAD_Z_SPEED_BASE = 22;
 const SEGMENT_LEN = 40;
 const SEGMENT_COUNT = 14;
-const SCENERY_ROWS = 22;
+const SCENERY_ROWS = 30;
 const MILES_PER_STATE = 100;
 
 const POWERUP_TYPES = ['nitro','shield','slow'];
@@ -360,47 +360,53 @@ const getCarDef = () => CARS.find(c=>c.id===SAVE.selectedCar)||CARS[0];
 // ════════════════════════════════════════════════════
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 3));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.15;
 renderer.outputEncoding = THREE.sRGBEncoding || 3001;
+renderer.physicallyCorrectLights = true;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 600);
-camera.position.set(0, 6.5, 16);
-camera.lookAt(0, 0.5, -15);
+camera.position.set(0, 5.8, 14);
+camera.lookAt(0, 0.2, -18);
 
 // ─── LIGHTS ───
-const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+const ambient = new THREE.AmbientLight(0xffffff, 0.35);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffa060, 1.4);
-sun.position.set(10, 25, 12);
+const sun = new THREE.DirectionalLight(0xffa060, 1.8);
+sun.position.set(12, 28, 14);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024,1024);
+sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 160;
-sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
-sun.shadow.camera.top = 50; sun.shadow.camera.bottom = -50;
+sun.shadow.camera.far = 180;
+sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
+sun.shadow.bias = -0.0003;
 scene.add(sun);
 // Hemisphere sky/ground bounce
-const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x443322, 0.55);
+const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x443322, 0.6);
 scene.add(hemiLight);
-// Rim light — separation from behind
-const rimLight = new THREE.DirectionalLight(0x334466, 0.6);
-rimLight.position.set(0, 8, 20);
+// Rim light — strong separation from behind
+const rimLight = new THREE.DirectionalLight(0x334466, 0.9);
+rimLight.position.set(0, 10, 22);
 scene.add(rimLight);
 // Player headlight point
-const headlight = new THREE.PointLight(0xffffff, 1.2, 40);
+const headlight = new THREE.PointLight(0xfffaf0, 1.8, 55);
 scene.add(headlight);
-// Warm fill from below (road bounce)
-const fillLight = new THREE.PointLight(0xff8833, 0.4, 20);
+// Warm fill from road bounce
+const fillLight = new THREE.PointLight(0xff8833, 0.55, 24);
 fillLight.position.set(0, -1, 6);
 scene.add(fillLight);
+// Second subtle fill from left
+const fill2 = new THREE.PointLight(0x6688aa, 0.3, 30);
+fill2.position.set(-8, 4, 0);
+scene.add(fill2);
 
 // ─── FOG ───
-scene.fog = new THREE.FogExp2(0x2a1a08, 0.018);
+scene.fog = new THREE.FogExp2(0x2a1a08, 0.014);
 
 // ─── RESIZE ───
 function resize(){
@@ -506,69 +512,98 @@ function makeAsphaltTexture(){
   const size=512;
   const cv=document.createElement('canvas'); cv.width=size; cv.height=size;
   const ctx=cv.getContext('2d');
-  // Dark base
-  ctx.fillStyle='#15151c';
+  // Rich dark asphalt base with slight blue-black sheen
+  ctx.fillStyle='#111218';
   ctx.fillRect(0,0,size,size);
-  // Blue-grey tint
-  ctx.fillStyle='rgba(28,30,46,0.45)';
-  ctx.fillRect(0,0,size,size);
-  // Dense grain — large + small
-  for(let i=0;i<18000;i++){
+  // Aggregate scatter — dense multi-size gravel particles
+  for(let i=0;i<28000;i++){
     const x=Math.random()*size, y=Math.random()*size;
-    const br=Math.floor(Math.random()*28+8);
-    const sz=Math.random()<0.15?2:1;
-    ctx.fillStyle=`rgba(${br},${br},${br+5},${0.6+Math.random()*0.4})`;
-    ctx.fillRect(x,y,sz,sz);
+    const br=Math.floor(Math.random()*38+6);
+    const sz=Math.random()<0.06?3:Math.random()<0.18?2:1;
+    const alpha=0.45+Math.random()*0.55;
+    ctx.fillStyle=`rgba(${br},${br},${br+4},${alpha})`;
+    if(sz===1) ctx.fillRect(x,y,1,1);
+    else { ctx.beginPath(); ctx.arc(x,y,sz*0.6,0,Math.PI*2); ctx.fill(); }
   }
-  // Crack lines
-  for(let c=0;c<8;c++){
-    ctx.strokeStyle=`rgba(0,0,0,${0.3+Math.random()*0.3})`;
-    ctx.lineWidth=1;
+  // Larger aggregate chunks (embedded stones)
+  for(let i=0;i<180;i++){
+    const x=Math.random()*size, y=Math.random()*size;
+    const r=1.2+Math.random()*2.2;
+    const br=Math.floor(Math.random()*22+18);
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${br},${br+2},${br+6},0.7)`; ctx.fill();
+    // highlight edge
+    ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.3,r*0.4,0,Math.PI*2);
+    ctx.fillStyle=`rgba(80,84,90,0.4)`; ctx.fill();
+  }
+  // Crack network — branching cracks
+  for(let c=0;c<12;c++){
+    ctx.save();
+    ctx.strokeStyle=`rgba(0,0,0,${0.35+Math.random()*0.3})`;
+    ctx.lineWidth=0.8+Math.random()*0.6;
     ctx.beginPath();
     let cx=Math.random()*size, cy=Math.random()*size;
     ctx.moveTo(cx,cy);
-    for(let s=0;s<6;s++){
-      cx+=( Math.random()-0.5)*40; cy+=(Math.random()-0.5)*40;
+    const segs=4+Math.floor(Math.random()*5);
+    for(let s=0;s<segs;s++){
+      cx+=(Math.random()-0.5)*38; cy+=(Math.random()-0.5)*38;
       ctx.lineTo(cx,cy);
+      // branch
+      if(Math.random()<0.4){
+        ctx.save(); ctx.strokeStyle=`rgba(0,0,0,${0.2+Math.random()*0.2})`;
+        ctx.lineWidth=0.5;
+        ctx.beginPath(); ctx.moveTo(cx,cy);
+        ctx.lineTo(cx+(Math.random()-0.5)*22, cy+(Math.random()-0.5)*22);
+        ctx.stroke(); ctx.restore();
+      }
     }
-    ctx.stroke();
+    ctx.stroke(); ctx.restore();
   }
-  // Tire track marks (dark bands)
-  for(let t=0;t<3;t++){
-    const x=80+t*160;
-    const grd=ctx.createLinearGradient(x-18,0,x+18,0);
+  // Tire track marks (parallel dark bands)
+  for(let t=0;t<4;t++){
+    const x=55+t*135;
+    const grd=ctx.createLinearGradient(x-14,0,x+14,0);
     grd.addColorStop(0,'rgba(0,0,0,0)');
-    grd.addColorStop(0.4,'rgba(0,0,0,0.22)');
-    grd.addColorStop(0.6,'rgba(0,0,0,0.22)');
+    grd.addColorStop(0.3,'rgba(0,0,8,0.28)');
+    grd.addColorStop(0.7,'rgba(0,0,8,0.28)');
     grd.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=grd;
-    ctx.fillRect(x-18,0,36,size);
+    ctx.fillRect(x-14,0,28,size);
   }
-  // Slight light scatter on center-top
-  const radGrd=ctx.createRadialGradient(size/2,0,0,size/2,0,size*0.6);
-  radGrd.addColorStop(0,'rgba(255,255,255,0.04)');
+  // Oil stain patches
+  for(let o=0;o<6;o++){
+    const ox=Math.random()*size, oy=Math.random()*size;
+    const rg=ctx.createRadialGradient(ox,oy,0,ox,oy,18+Math.random()*22);
+    rg.addColorStop(0,'rgba(20,22,40,0.35)');
+    rg.addColorStop(0.5,'rgba(10,14,28,0.18)');
+    rg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=rg; ctx.fillRect(ox-40,oy-40,80,80);
+  }
+  // Center-road subtle light scatter (wet look)
+  const radGrd=ctx.createRadialGradient(size/2,size*0.1,0,size/2,size*0.1,size*0.55);
+  radGrd.addColorStop(0,'rgba(255,255,255,0.055)');
   radGrd.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=radGrd;
-  ctx.fillRect(0,0,size,size);
+  ctx.fillStyle=radGrd; ctx.fillRect(0,0,size,size);
 
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(3, 12);
+  tex.repeat.set(4, 16);
+  tex.anisotropy = 4;
   return tex;
 }
 
 const asphaltTex = makeAsphaltTexture();
-const roadMat = new THREE.MeshStandardMaterial({color:0x1e1e26, map:asphaltTex, roughness:0.82, metalness:0.10});
+const roadMat = new THREE.MeshStandardMaterial({color:0x1a1a22, map:asphaltTex, roughness:0.88, metalness:0.06, envMapIntensity:0.3});
 const shoulderMat = new THREE.MeshStandardMaterial({color:0xb8ae90, roughness:0.97});
 // Lane lines — bright with stronger emissive so they glow at night
-const lineMat = new THREE.MeshStandardMaterial({color:0xffee00, roughness:0.35, emissive:new THREE.Color(0xffdd00), emissiveIntensity:0.8});
-const edgeLineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.45, emissive:new THREE.Color(0xffffff), emissiveIntensity:0.5});
+const lineMat = new THREE.MeshStandardMaterial({color:0xffee00, roughness:0.2, emissive:new THREE.Color(0xffdd00), emissiveIntensity:1.8});
+const edgeLineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.2, emissive:new THREE.Color(0xffffff), emissiveIntensity:1.2});
 const groundMat = new THREE.MeshStandardMaterial({color:0x3d1f06, roughness:1.0, metalness:0.0});
 // Wet road overlay (used in rain biome)
-const wetRoadMat = new THREE.MeshStandardMaterial({color:0x1c2028, roughness:0.28, metalness:0.45});
+const wetRoadMat = new THREE.MeshStandardMaterial({color:0x18202c, map:asphaltTex, roughness:0.18, metalness:0.55, envMapIntensity:1.2});
 
 const roadSegments = [];
-const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(400,2000), groundMat);
+const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(600,2400), groundMat);
 groundMesh.rotation.x=-Math.PI/2; groundMesh.position.y=-0.02; groundMesh.receiveShadow=true;
 scene.add(groundMesh);
 
@@ -624,7 +659,7 @@ function buildRoadSegment(){
     const lx=-ROAD_HALF+l*LANE_WIDTH;
     const dashes=7;
     for(let d=0;d<dashes;d++){
-      const ln=new THREE.Mesh(new THREE.PlaneGeometry(0.20, 3.0), lineMat);
+      const ln=new THREE.Mesh(new THREE.PlaneGeometry(0.24, 3.2), lineMat);
       ln.rotation.x=-Math.PI/2;
       ln.position.set(lx, 0.005, (-SEGMENT_LEN/2)+(d+0.5)*(SEGMENT_LEN/dashes));
       grp.add(ln);
@@ -3092,6 +3127,7 @@ function update(dt){
 
   headlight.position.set(G.playerX, 3.5, 5);
   fillLight.position.set(G.playerX, -0.5, 4);
+  fill2.position.set(G.playerX - 8, 4, 0);
 
   if(G.invincible){
     G.invincTimer-=dt; G.blinkTimer+=dt;
