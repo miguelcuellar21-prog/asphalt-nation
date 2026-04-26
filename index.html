@@ -16,7 +16,7 @@
 
     /* ─── HUD ─── */
     #hud{position:fixed;inset:0;pointer-events:none;z-index:10;color:#fff}
-    #hud-top{display:flex;justify-content:space-between;align-items:flex-start;padding:env(safe-area-inset-top,14px) 14px 0;padding-top:max(env(safe-area-inset-top),14px)}
+    #hud-top{display:flex;justify-content:space-between;align-items:flex-start;padding:env(safe-area-inset-top,14px) 14px 0;padding-top:max(env(safe-area-inset-top),14px);pointer-events:auto}
     .hp{background:rgba(0,0,0,0.72);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,200,0,0.25);border-radius:12px;padding:8px 14px;min-width:72px}
     .hl{font-size:9px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:rgba(255,200,0,0.6);line-height:1;margin-bottom:2px}
     .hv{font-family:'Orbitron',monospace;font-size:22px;font-weight:900;font-variant-numeric:tabular-nums lining-nums;color:#fff;line-height:1;text-shadow:0 0 12px rgba(255,204,0,0.4)}
@@ -369,9 +369,9 @@ renderer.outputEncoding = THREE.sRGBEncoding || 3001;
 renderer.physicallyCorrectLights = true;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 600);
-camera.position.set(0, 5.8, 14);
-camera.lookAt(0, 0.2, -18);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 600);
+camera.position.set(0, 7.2, 18);
+camera.lookAt(0, 0.0, -14);
 
 // ─── LIGHTS ───
 const ambient = new THREE.AmbientLight(0xffffff, 0.35);
@@ -711,407 +711,402 @@ function buildCar(colorHex, accentHex, scale=1){
   const s = scale;
   const bodyC    = new THREE.Color(colorHex);
   const accentC  = new THREE.Color(accentHex);
-  const darkBodyC= bodyC.clone().multiplyScalar(0.52);
-  const bodyMat  = () => new THREE.MeshStandardMaterial({color:colorHex, roughness:0.08, metalness:0.88, envMapIntensity:1.5});
+  const darkBodyC= bodyC.clone().multiplyScalar(0.50);
+  const bodyMat  = () => new THREE.MeshStandardMaterial({color:colorHex, roughness:0.06, metalness:0.90, envMapIntensity:1.6});
   const darkMat  = (c=0x111111) => new THREE.MeshStandardMaterial({color:c, roughness:0.55, metalness:0.25});
   const chromeMat= () => new THREE.MeshStandardMaterial({color:0xeeeeff, metalness:0.98, roughness:0.04, envMapIntensity:1.8});
   const glassMat = (op=0.72) => new THREE.MeshStandardMaterial({color:0x0a2a44, transparent:true, opacity:op, roughness:0.04, metalness:0.9});
-  const accentMat= () => new THREE.MeshStandardMaterial({color:accentHex, roughness:0.35, metalness:0.55});
+  const accentMat= () => new THREE.MeshStandardMaterial({color:accentHex, roughness:0.30, metalness:0.60});
   const rubberMat= () => new THREE.MeshStandardMaterial({color:0x0e0e0e, roughness:0.97, metalness:0.0});
   const rimMat   = () => new THREE.MeshStandardMaterial({color:0xdddddd, metalness:0.96, roughness:0.06});
 
-  // ── LOWER BODY — smooth LatheGeometry shell for rounded sides ──
-  // Cross-section profile: bottom narrow -> widens to door -> tapers to top
-  const bodyPoints = [
-    new THREE.Vector2(0.70*s, 0.00*s),   // bottom centre-floor
-    new THREE.Vector2(0.94*s, 0.08*s),   // outward lip at sill
-    new THREE.Vector2(1.02*s, 0.22*s),   // widest point (door mid)
-    new THREE.Vector2(0.98*s, 0.38*s),   // shoulder
-    new THREE.Vector2(0.90*s, 0.52*s),   // waist line near glass
-    new THREE.Vector2(0.72*s, 0.62*s),   // roof edge
-    new THREE.Vector2(0.52*s, 0.68*s),   // roof centre
-    new THREE.Vector2(0.00*s, 0.70*s),   // roof peak (axis)
-  ];
-  // Lathe gives a rotationally symmetric shell — we only show the side half
-  const bodyLathe = new THREE.Mesh(
-    new THREE.LatheGeometry(bodyPoints, 16, 0, Math.PI*2),
+  // ── LOWER BODY — CapsuleGeometry pill along Z gives perfectly smooth curved sides ──
+  // CapsuleGeometry(radius, length, capSeg, radSeg) — r155 supported
+  const lowerBody = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.44*s, 3.00*s, 12, 20),
     bodyMat()
   );
-  bodyLathe.castShadow = true;
-  grp.add(bodyLathe); // part 1 - smooth rounded body shell
+  lowerBody.rotation.x = Math.PI/2; // orient along Z (car length)
+  lowerBody.scale.set(2.18, 1.0, 1.0); // widen laterally for car width
+  lowerBody.position.set(0, 0.44*s, 0);
+  lowerBody.castShadow = true;
+  grp.add(lowerBody);
 
-  // Elongate the lathe body along Z-axis to car length using ScaleZ
-  bodyLathe.scale.set(1, 1, 2.05); // stretch to full car length
-  bodyLathe.position.set(0, 0.00*s, 0);
-
-  // Front nose taper cap
-  const noseCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.72*s, 14, 8, 0, Math.PI*2, 0, Math.PI*0.5),
-    bodyMat()
+  // Flat belly plate (bottom underbody close out)
+  const belly = new THREE.Mesh(
+    new THREE.BoxGeometry(1.80*s, 0.06*s, 3.80*s),
+    new THREE.MeshStandardMaterial({color:0x0a0a0a, roughness:0.95, metalness:0.1})
   );
-  noseCap.scale.set(1, 0.78, 0.82);
-  noseCap.position.set(0, 0.10*s, 2.00*s); noseCap.castShadow=true; grp.add(noseCap); // part 2
+  belly.position.set(0, 0.06*s, 0);
+  grp.add(belly);
 
-  // Rear tail taper cap
-  const tailCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.72*s, 14, 8, 0, Math.PI*2, 0, Math.PI*0.5),
-    bodyMat()
+  // ── UPPER CABIN — narrower capsule sitting on top of lower body ──
+  const cabin = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.36*s, 1.40*s, 10, 18),
+    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.80).getHex(), roughness:0.10, metalness:0.80})
   );
-  tailCap.scale.set(1, 0.72, 0.80);
-  tailCap.rotation.y = Math.PI;
-  tailCap.position.set(0, 0.10*s, -2.00*s); tailCap.castShadow=true; grp.add(tailCap); // part 3
+  cabin.rotation.x = Math.PI/2;
+  cabin.scale.set(1.78, 1.0, 1.0); // narrower than lower body
+  cabin.position.set(0, 0.90*s, -0.12*s);
+  cabin.castShadow = true;
+  grp.add(cabin);
 
-  // ── HOOD — large curved dome over engine bay ──
-  const hood = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15*s, 0.24*s, 1.90*s, 16, 1, false, 0, Math.PI),
-    bodyMat()
+  // Hood spine ridge (runs front-to-back over engine bay)
+  const spine = new THREE.Mesh(
+    new THREE.BoxGeometry(0.10*s, 0.05*s, 1.70*s),
+    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.68).getHex(), roughness:0.12, metalness:0.85})
   );
-  hood.rotation.z = Math.PI/2; hood.rotation.y = Math.PI/2;
-  hood.position.set(0, 0.78*s, 1.00*s); hood.castShadow=true; grp.add(hood); // part 4
+  spine.position.set(0, 0.89*s, 0.95*s);
+  grp.add(spine);
 
-  // Hood center spine ridge
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.12*s, 0.06*s, 1.80*s),
-    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.70).getHex(), roughness:0.12, metalness:0.85}));
-  spine.position.set(0, 0.84*s, 1.00*s); grp.add(spine); // part 5
-
-  // Hood vent slits (3 pairs)
-  for(let v=0; v<3; v++){
-    for(const sv of [-0.18*s, 0.18*s]){
-      const vent = new THREE.Mesh(new THREE.BoxGeometry(0.10*s, 0.04*s, 0.30*s),
-        new THREE.MeshStandardMaterial({color:0x060606, roughness:0.98}));
-      vent.position.set(sv, 0.87*s, 0.78*s - v*0.22*s); grp.add(vent); // parts 6-11
+  // Hood vent slits (2 pairs)
+  for(let v=0; v<2; v++){
+    for(const sv of [-0.22*s, 0.22*s]){
+      const vent = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12*s, 0.04*s, 0.28*s),
+        new THREE.MeshStandardMaterial({color:0x050505, roughness:0.98})
+      );
+      vent.position.set(sv, 0.91*s, 0.82*s - v*0.26*s);
+      grp.add(vent);
     }
   }
 
-  // ── TRUNK DECK (rear) ──
-  const trunk = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08*s, 0.16*s, 1.90*s, 14, 1, false, 0, Math.PI),
-    bodyMat()
-  );
-  trunk.rotation.z = Math.PI/2; trunk.rotation.y = -Math.PI/2;
-  trunk.position.set(0, 0.76*s, -1.32*s); trunk.castShadow=true; grp.add(trunk); // part 12
-
-  // ── CABIN GLASS GREENHOUSE — dark tinted upper shell ──
-  // The lathe body already forms the lower body. Add a glass greenhouse above.
-  const cabinPoints = [
-    new THREE.Vector2(0.72*s, 0.00*s), // base at waist
-    new THREE.Vector2(0.76*s, 0.10*s),
-    new THREE.Vector2(0.68*s, 0.28*s),
-    new THREE.Vector2(0.50*s, 0.44*s),
-    new THREE.Vector2(0.26*s, 0.54*s),
-    new THREE.Vector2(0.00*s, 0.56*s), // peak
-  ];
-  const greenhouse = new THREE.Mesh(
-    new THREE.LatheGeometry(cabinPoints, 14, 0, Math.PI*2),
-    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.82).getHex(),
-      roughness:0.12, metalness:0.72})
-  );
-  greenhouse.scale.set(1, 1, 1.45); // stretch along car length
-  greenhouse.position.set(0, 0.58*s, -0.08*s); greenhouse.castShadow=true; grp.add(greenhouse); // part 13
-
-  // Roof skin top-center cap strip (aerodynamic spine)
-  const roofCap = new THREE.Mesh(new THREE.BoxGeometry(0.28*s, 0.06*s, 1.60*s),
-    new THREE.MeshStandardMaterial({color:bodyC.clone().multiplyScalar(0.70).getHex(), roughness:0.12, metalness:0.85}));
-  roofCap.position.set(0, 1.14*s, -0.08*s); grp.add(roofCap); // part 14-15
-
-  // A-pillars (front cabin slope)
-  for(const sx of [-0.70*s, 0.70*s]){
-    const ap = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.48*s, 0.07*s),
-      darkMat(darkBodyC.getHex()));
-    ap.position.set(sx, 0.84*s, 0.76*s); ap.rotation.z = (sx>0?0.14:-0.14); grp.add(ap); // parts 16-17
-  }
-
-  // B-pillars
-  for(const sx of [-0.70*s, 0.70*s]){
-    const bp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.44*s, 0.06*s),
-      darkMat(darkBodyC.getHex()));
-    bp.position.set(sx, 0.84*s, -0.26*s); grp.add(bp); // parts 18-19
-  }
-
-  // C-pillars (rear cabin slope)
-  for(const sx of [-0.70*s, 0.70*s]){
-    const cp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.46*s, 0.07*s),
-      darkMat(darkBodyC.getHex()));
-    cp.position.set(sx, 0.84*s, -0.92*s); cp.rotation.z = (sx>0?-0.12:0.12); grp.add(cp); // parts 20-21
-  }
-
-  // ── WINDSHIELD (angled) ──
-  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.30*s, 0.50*s), glassMat(0.82));
-  ws.position.set(0, 0.98*s, 0.78*s); ws.rotation.x = -0.50; grp.add(ws); // part 22
-  const wsFrame = new THREE.Mesh(new THREE.BoxGeometry(1.38*s, 0.58*s, 0.05*s), chromeMat());
-  wsFrame.position.set(0, 0.98*s, 0.775*s); wsFrame.rotation.x = -0.50; grp.add(wsFrame); // part 23
-  const sunStrip = new THREE.Mesh(new THREE.PlaneGeometry(1.30*s, 0.14*s),
-    new THREE.MeshStandardMaterial({color:0x001020, transparent:true, opacity:0.96, roughness:0.05, metalness:0.9}));
-  sunStrip.position.set(0, 1.18*s, 0.74*s); sunStrip.rotation.x = -0.50; grp.add(sunStrip); // part 24
+  // ── WINDSHIELD ──
+  const ws = new THREE.Mesh(new THREE.PlaneGeometry(1.22*s, 0.52*s), glassMat(0.82));
+  ws.position.set(0, 1.04*s, 0.64*s);
+  ws.rotation.x = -0.52;
+  grp.add(ws);
+  const wsFrame = new THREE.Mesh(new THREE.BoxGeometry(1.30*s, 0.60*s, 0.04*s), chromeMat());
+  wsFrame.position.set(0, 1.04*s, 0.635*s);
+  wsFrame.rotation.x = -0.52;
+  grp.add(wsFrame);
+  // Tinted top strip
+  const sunStrip = new THREE.Mesh(new THREE.PlaneGeometry(1.22*s, 0.13*s),
+    new THREE.MeshStandardMaterial({color:0x001020, transparent:true, opacity:0.96}));
+  sunStrip.position.set(0, 1.22*s, 0.60*s);
+  sunStrip.rotation.x = -0.52;
+  grp.add(sunStrip);
 
   // ── REAR WINDOW ──
-  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.24*s, 0.44*s), glassMat(0.74));
-  rw.position.set(0, 0.96*s, -0.98*s); rw.rotation.x = 0.44; grp.add(rw); // part 25
-  const rwFrame = new THREE.Mesh(new THREE.BoxGeometry(1.32*s, 0.52*s, 0.05*s), chromeMat());
-  rwFrame.position.set(0, 0.96*s, -0.975*s); rwFrame.rotation.x = 0.44; grp.add(rwFrame); // part 26
+  const rw = new THREE.Mesh(new THREE.PlaneGeometry(1.16*s, 0.44*s), glassMat(0.74));
+  rw.position.set(0, 1.02*s, -0.92*s);
+  rw.rotation.x = 0.46;
+  grp.add(rw);
+  const rwFrame = new THREE.Mesh(new THREE.BoxGeometry(1.24*s, 0.52*s, 0.04*s), chromeMat());
+  rwFrame.position.set(0, 1.02*s, -0.915*s);
+  rwFrame.rotation.x = 0.46;
+  grp.add(rwFrame);
 
   // ── SIDE WINDOWS ──
-  for(const sx of [-0.94*s, 0.94*s]){
-    const sw1 = new THREE.Mesh(new THREE.PlaneGeometry(0.82*s, 0.34*s), glassMat(0.74));
-    sw1.rotation.y = Math.PI/2; sw1.position.set(sx, 0.96*s, 0.22*s); grp.add(sw1); // parts 27-28
-    const sw2 = new THREE.Mesh(new THREE.PlaneGeometry(0.58*s, 0.30*s), glassMat(0.70));
-    sw2.rotation.y = Math.PI/2; sw2.position.set(sx, 0.94*s, -0.50*s); grp.add(sw2); // parts 29-30
-    // Chrome window surround
-    const wTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.42*s, 1.50*s), chromeMat());
-    wTrim.position.set(sx, 0.96*s, -0.14*s); grp.add(wTrim); // parts 31-32
+  for(const sx of [-0.86*s, 0.86*s]){
+    const sw1 = new THREE.Mesh(new THREE.PlaneGeometry(0.76*s, 0.34*s), glassMat(0.76));
+    sw1.rotation.y = Math.PI/2;
+    sw1.position.set(sx, 1.02*s, 0.18*s);
+    grp.add(sw1);
+    const sw2 = new THREE.Mesh(new THREE.PlaneGeometry(0.54*s, 0.30*s), glassMat(0.70));
+    sw2.rotation.y = Math.PI/2;
+    sw2.position.set(sx, 1.00*s, -0.52*s);
+    grp.add(sw2);
+    // Chrome window trim strip
+    const wTrim = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.40*s, 1.44*s), chromeMat());
+    wTrim.position.set(sx, 1.00*s, -0.16*s);
+    grp.add(wTrim);
   }
 
-  // ── FENDER FLARES — prominent CylinderGeometry half-arches ──
-  for(const [fx, fz] of [[-1.0,-1.22],[1.0,-1.22],[-1.0,1.22],[1.0,1.22]]){
+  // A / B / C pillars
+  for(const sx of [-0.64*s, 0.64*s]){
+    // A-pillar (front)
+    const ap = new THREE.Mesh(new THREE.BoxGeometry(0.07*s, 0.46*s, 0.07*s), darkMat(darkBodyC.getHex()));
+    ap.position.set(sx, 0.88*s, 0.70*s);
+    ap.rotation.z = sx>0 ? 0.14 : -0.14;
+    grp.add(ap);
+    // B-pillar
+    const bp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.42*s, 0.06*s), darkMat(darkBodyC.getHex()));
+    bp.position.set(sx, 0.86*s, -0.24*s);
+    grp.add(bp);
+    // C-pillar (rear)
+    const cp = new THREE.Mesh(new THREE.BoxGeometry(0.06*s, 0.44*s, 0.07*s), darkMat(darkBodyC.getHex()));
+    cp.position.set(sx, 0.88*s, -0.90*s);
+    cp.rotation.z = sx>0 ? -0.13 : 0.13;
+    grp.add(cp);
+  }
+
+  // ── DOOR CREASE LINE ──
+  for(const sx of [-0.92*s, 0.92*s]){
+    const crease = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03*s, 0.04*s, 3.60*s),
+      darkMat(darkBodyC.getHex())
+    );
+    crease.position.set(sx, 0.54*s, -0.04*s);
+    grp.add(crease);
+  }
+
+  // ── SIDE SILL ACCENT ──
+  for(const sx of [-0.92*s, 0.92*s]){
+    const sill = new THREE.Mesh(
+      new THREE.BoxGeometry(0.05*s, 0.10*s, 3.50*s),
+      new THREE.MeshStandardMaterial({color:accentHex, roughness:0.28, metalness:0.62,
+        emissive:accentC.clone().multiplyScalar(0.10)})
+    );
+    sill.position.set(sx, 0.22*s, -0.04*s);
+    grp.add(sill);
+  }
+
+  // ── FRONT FASCIA + GRILLE ──
+  const fascia = new THREE.Mesh(new THREE.BoxGeometry(1.84*s, 0.28*s, 0.14*s), darkMat(0x141414));
+  fascia.position.set(0, 0.38*s, 1.96*s);
+  grp.add(fascia);
+  // Center intake
+  const intake = new THREE.Mesh(new THREE.BoxGeometry(0.72*s, 0.20*s, 0.12*s), darkMat(0x040404));
+  intake.position.set(0, 0.52*s, 1.97*s);
+  grp.add(intake);
+  // Grille bars (5)
+  for(let b=0; b<5; b++){
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.72*s, 0.022*s, 0.13*s),
+      new THREE.MeshStandardMaterial({color:0x777777, metalness:0.80, roughness:0.15}));
+    bar.position.set(0, 0.40*s + b*0.045*s, 1.97*s);
+    grp.add(bar);
+  }
+  // Vertical grille dividers (3)
+  for(const gx of [-0.26*s, 0, 0.26*s]){
+    const gv = new THREE.Mesh(new THREE.BoxGeometry(0.022*s, 0.20*s, 0.13*s),
+      new THREE.MeshStandardMaterial({color:0x666666, metalness:0.75, roughness:0.20}));
+    gv.position.set(gx, 0.52*s, 1.97*s);
+    grp.add(gv);
+  }
+  // Chrome front bumper bar
+  const bumpF = new THREE.Mesh(new THREE.BoxGeometry(1.76*s, 0.12*s, 0.18*s), chromeMat());
+  bumpF.position.set(0, 0.28*s, 1.96*s);
+  grp.add(bumpF);
+  // Bumper end caps
+  for(const bx of [-0.88*s, 0.88*s]){
+    const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.06*s, 0.06*s, 0.12*s, 8), chromeMat());
+    bc.position.set(bx, 0.28*s, 1.96*s);
+    grp.add(bc);
+  }
+  // Front splitter
+  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.05*s, 0.24*s), darkMat(0x181818));
+  splitter.position.set(0, 0.07*s, 1.95*s);
+  grp.add(splitter);
+  // DRL strips
+  for(const dx of [-0.62*s, 0.62*s]){
+    const drl = new THREE.Mesh(new THREE.BoxGeometry(0.32*s, 0.035*s, 0.06*s),
+      new THREE.MeshStandardMaterial({color:0xffffff, emissive:new THREE.Color(0xffffff), emissiveIntensity:5.0}));
+    drl.position.set(dx, 0.60*s, 1.97*s);
+    grp.add(drl);
+  }
+
+  // ── HEADLIGHTS ──
+  for(const hx of [-0.70*s, 0.70*s]){
+    // housing
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.34*s, 0.18*s, 0.10*s),
+      new THREE.MeshStandardMaterial({color:0xcccccc, roughness:0.08, metalness:0.65}));
+    housing.position.set(hx, 0.72*s, 1.96*s);
+    grp.add(housing);
+    // LED emitter
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.26*s, 0.09*s, 0.08*s),
+      new THREE.MeshStandardMaterial({color:0xffffff, emissive:new THREE.Color(0xffffff), emissiveIntensity:7.0, roughness:0.0}));
+    led.position.set(hx, 0.72*s, 1.97*s);
+    grp.add(led);
+    // DRL in housing
+    const drl2 = new THREE.Mesh(new THREE.BoxGeometry(0.28*s, 0.035*s, 0.06*s),
+      new THREE.MeshStandardMaterial({color:0xffffff, emissive:new THREE.Color(0xffffff), emissiveIntensity:4.0}));
+    drl2.position.set(hx, 0.82*s, 1.97*s);
+    grp.add(drl2);
+  }
+
+  // ── REAR FASCIA ──
+  const bumpR = new THREE.Mesh(new THREE.BoxGeometry(1.76*s, 0.12*s, 0.18*s), chromeMat());
+  bumpR.position.set(0, 0.28*s, -1.96*s);
+  grp.add(bumpR);
+  for(const bx of [-0.88*s, 0.88*s]){
+    const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.06*s, 0.06*s, 0.12*s, 8), chromeMat());
+    bc.position.set(bx, 0.28*s, -1.96*s);
+    grp.add(bc);
+  }
+  // Diffuser
+  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.52*s, 0.14*s, 0.18*s), darkMat(0x141414));
+  diff.position.set(0, 0.07*s, -1.96*s);
+  grp.add(diff);
+  // Diffuser fins
+  for(let f=0; f<6; f++){
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.14*s, 0.20*s), darkMat(0x2a2a2a));
+    fin.position.set(-0.64*s + f*0.25*s, 0.07*s, -1.96*s);
+    grp.add(fin);
+  }
+  // Exhaust tips
+  for(const ex of [-0.50*s, 0.50*s]){
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.075*s, 0.095*s, 0.26*s, 14),
+      new THREE.MeshStandardMaterial({color:0x999999, metalness:0.94, roughness:0.12}));
+    tip.rotation.x = Math.PI/2;
+    tip.position.set(ex, 0.18*s, -1.98*s);
+    grp.add(tip);
+    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.055*s, 0.055*s, 0.07*s, 10),
+      new THREE.MeshStandardMaterial({color:0x030303}));
+    hole.rotation.x = Math.PI/2;
+    hole.position.set(ex, 0.18*s, -2.04*s);
+    grp.add(hole);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075*s, 0.011*s, 6, 14), chromeMat());
+    ring.rotation.x = Math.PI/2;
+    ring.position.set(ex, 0.18*s, -1.96*s);
+    grp.add(ring);
+  }
+
+  // ── TAIL LIGHTS — full-width LED bar ──
+  const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.36*s, 0.07*s, 0.07*s),
+    new THREE.MeshStandardMaterial({color:0xff1100, emissive:new THREE.Color(0xff1100), emissiveIntensity:3.5}));
+  tailBar.position.set(0, 0.80*s, -1.96*s);
+  grp.add(tailBar);
+  // Tail light clusters
+  for(const tx of [-0.70*s, 0.70*s]){
+    const tlH = new THREE.Mesh(new THREE.BoxGeometry(0.30*s, 0.16*s, 0.10*s),
+      new THREE.MeshStandardMaterial({color:0x550000, roughness:0.20, metalness:0.40}));
+    tlH.position.set(tx, 0.66*s, -1.96*s);
+    grp.add(tlH);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.22*s, 0.10*s, 0.09*s),
+      new THREE.MeshStandardMaterial({color:0xff2200, emissive:new THREE.Color(0xff2200), emissiveIntensity:5.5}));
+    tl.position.set(tx, 0.66*s, -1.96*s);
+    grp.add(tl);
+    const brkDot = new THREE.Mesh(new THREE.CylinderGeometry(0.038*s, 0.038*s, 0.05*s, 8),
+      new THREE.MeshStandardMaterial({color:0xff4422, emissive:new THREE.Color(0xff4422), emissiveIntensity:4.0}));
+    brkDot.rotation.x = Math.PI/2;
+    brkDot.position.set(tx, 0.55*s, -1.97*s);
+    grp.add(brkDot);
+  }
+
+  // ── SPOILER ──
+  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.08*s, 0.38*s), accentMat());
+  spoiler.position.set(0, 1.14*s, -0.96*s);
+  grp.add(spoiler);
+  for(const sx of [-0.80*s, 0.80*s]){
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.08*s, 0.20*s, 0.38*s),
+      new THREE.MeshStandardMaterial({color:accentC.clone().multiplyScalar(0.72).getHex(), roughness:0.35}));
+    ep.position.set(sx, 1.08*s, -0.96*s);
+    grp.add(ep);
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.030*s, 0.030*s, 0.26*s, 6),
+      new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.84, roughness:0.18}));
+    up.position.set(sx, 0.98*s, -0.96*s);
+    grp.add(up);
+  }
+
+  // ── SIDE MIRRORS ──
+  for(const sx of [-0.90*s, 0.90*s]){
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.028*s, 0.028*s, 0.28*s, 7), darkMat(darkBodyC.getHex()));
+    arm.rotation.z = Math.PI/2;
+    arm.position.set(sx + (sx>0 ? 0.14*s : -0.14*s), 0.96*s, 0.56*s);
+    grp.add(arm);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.24*s, 0.14*s, 0.09*s), darkMat(darkBodyC.getHex()));
+    head.position.set(sx + (sx>0 ? 0.20*s : -0.20*s), 0.95*s, 0.56*s);
+    grp.add(head);
+    const mirrorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.18*s, 0.11*s),
+      new THREE.MeshStandardMaterial({color:0x88aabb, roughness:0.03, metalness:0.92}));
+    mirrorGlass.rotation.y = sx>0 ? Math.PI/2 : -Math.PI/2;
+    mirrorGlass.position.set(sx + (sx>0 ? 0.22*s : -0.22*s), 0.95*s, 0.56*s);
+    grp.add(mirrorGlass);
+  }
+
+  // ── FENDER FLARES — rounded CylinderGeometry half-arches ──
+  for(const [fx, fz] of [[-1.0,-1.18],[1.0,-1.18],[-1.0,1.18],[1.0,1.18]]){
     const fender = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.44*s, 0.44*s, 0.48*s, 18, 1, false, 0, Math.PI),
+      new THREE.CylinderGeometry(0.42*s, 0.42*s, 0.46*s, 18, 1, false, 0, Math.PI),
       bodyMat()
     );
     fender.rotation.z = Math.PI/2;
     fender.rotation.y = fz > 0 ? (fx>0 ? -Math.PI/2 : Math.PI/2) : (fx>0 ? Math.PI/2 : -Math.PI/2);
     fender.position.set(fx*s, 0.44*s, fz*s);
-    fender.castShadow=true; grp.add(fender); // parts 33-36
+    fender.castShadow = true;
+    grp.add(fender);
   }
 
-  // ── DOOR CREASE LINE ──
-  for(const sx of [-1.00*s, 1.00*s]){
-    const crease = new THREE.Mesh(new THREE.BoxGeometry(0.03*s, 0.05*s, 3.80*s),
-      darkMat(darkBodyC.getHex()));
-    crease.position.set(sx, 0.54*s, -0.06*s); grp.add(crease); // parts 37-38
-  }
-
-  // ── SIDE SILL ACCENT ──
-  for(const sx of [-1.00*s, 1.00*s]){
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(0.04*s, 0.12*s, 3.80*s),
-      new THREE.MeshStandardMaterial({color:accentHex, roughness:0.30, metalness:0.60,
-        emissive:accentC.clone().multiplyScalar(0.12)}));
-    sill.position.set(sx, 0.24*s, -0.06*s); grp.add(sill); // parts 39-40
-  }
-
-  // ── ACCENT STRIPE (body crest) ──
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.02*s, 0.07*s, 4.10*s),
-    new THREE.MeshStandardMaterial({color:accentHex, roughness:0.28,
-      emissive:accentC.clone().multiplyScalar(0.20)}));
-  stripe.position.set(0, 0.29*s, 0); grp.add(stripe); // part 41
-
-  // ── FRONT FASCIA + GRILLE ──
-  const fascia = new THREE.Mesh(new THREE.BoxGeometry(1.90*s, 0.30*s, 0.14*s),
-    darkMat(0x141414));
-  fascia.position.set(0, 0.16*s, 2.00*s); grp.add(fascia); // part 42
-  // Center intake opening
-  const intake = new THREE.Mesh(new THREE.BoxGeometry(0.74*s, 0.22*s, 0.12*s),
-    darkMat(0x040404));
-  intake.position.set(0, 0.38*s, 2.00*s); grp.add(intake); // part 43
-  // Grille bars
-  for(let b=0; b<5; b++){
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.74*s, 0.025*s, 0.14*s),
-      new THREE.MeshStandardMaterial({color:0x777777, metalness:0.80, roughness:0.15}));
-    bar.position.set(0, 0.25*s + b*0.048*s, 2.00*s); grp.add(bar); // parts 44-48
-  }
-  // Vertical grille dividers
-  for(const gx of [-0.28*s, 0, 0.28*s]){
-    const gv = new THREE.Mesh(new THREE.BoxGeometry(0.025*s, 0.22*s, 0.14*s),
-      new THREE.MeshStandardMaterial({color:0x666666, metalness:0.75, roughness:0.20}));
-    gv.position.set(gx, 0.38*s, 2.00*s); grp.add(gv); // parts 49-51
-  }
-  // Front bumper chrome
-  const bumpF = new THREE.Mesh(new THREE.BoxGeometry(1.82*s, 0.14*s, 0.18*s), chromeMat());
-  bumpF.position.set(0, 0.20*s, 1.99*s); grp.add(bumpF); // part 52
-  // Bumper end caps (rounded via cylinder)
-  for(const bx of [-0.91*s, 0.91*s]){
-    const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.07*s, 0.07*s, 0.14*s, 8), chromeMat());
-    bc.position.set(bx, 0.20*s, 1.99*s); grp.add(bc); // parts 53-54
-  }
-  // Front splitter
-  const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.60*s, 0.06*s, 0.26*s),
-    darkMat(0x181818));
-  splitter.position.set(0, 0.06*s, 1.98*s); grp.add(splitter); // part 55
-  // DRL strips (thin emissive lines along lower bumper)
-  for(const dx of [-0.64*s, 0.64*s]){
-    const drl = new THREE.Mesh(new THREE.BoxGeometry(0.34*s, 0.04*s, 0.06*s),
-      new THREE.MeshStandardMaterial({color:0xffffff,
-        emissive:new THREE.Color(0xffffff), emissiveIntensity:4.5}));
-    drl.position.set(dx, 0.32*s, 2.00*s); grp.add(drl); // parts 56-57
-  }
-
-  // ── REAR DETAILS ──
-  const bumpR = new THREE.Mesh(new THREE.BoxGeometry(1.82*s, 0.14*s, 0.18*s), chromeMat());
-  bumpR.position.set(0, 0.20*s, -2.00*s); grp.add(bumpR); // part 58
-  for(const bx of [-0.91*s, 0.91*s]){
-    const bc = new THREE.Mesh(new THREE.CylinderGeometry(0.07*s, 0.07*s, 0.14*s, 8), chromeMat());
-    bc.position.set(bx, 0.20*s, -2.00*s); grp.add(bc); // parts 59-60
-  }
-  // Diffuser
-  const diff = new THREE.Mesh(new THREE.BoxGeometry(1.56*s, 0.16*s, 0.18*s), darkMat(0x141414));
-  diff.position.set(0, 0.06*s, -2.00*s); grp.add(diff); // part 61
-  // Diffuser fins
-  for(let f=0; f<6; f++){
-    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.05*s, 0.16*s, 0.20*s), darkMat(0x2a2a2a));
-    fin.position.set(-0.66*s + f*0.26*s, 0.06*s, -2.00*s); grp.add(fin); // parts 62-67
-  }
-
-  // Exhaust tips (dual, with inner dark hole)
-  for(const ex of [-0.52*s, 0.52*s]){
-    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.08*s, 0.10*s, 0.28*s, 14),
-      new THREE.MeshStandardMaterial({color:0x999999, metalness:0.94, roughness:0.12}));
-    tip.rotation.x = Math.PI/2; tip.position.set(ex, 0.12*s, -2.02*s); grp.add(tip); // parts 68-69
-    const hole = new THREE.Mesh(new THREE.CylinderGeometry(0.06*s, 0.06*s, 0.08*s, 10),
-      new THREE.MeshStandardMaterial({color:0x030303}));
-    hole.rotation.x = Math.PI/2; hole.position.set(ex, 0.12*s, -2.09*s); grp.add(hole); // parts 70-71
-    // Exhaust chrome ring
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.08*s, 0.012*s, 6, 14),
-      chromeMat());
-    ring.rotation.x = Math.PI/2; ring.position.set(ex, 0.12*s, -2.00*s); grp.add(ring); // parts 72-73
-  }
-
-  // ── TAIL LIGHTS — full-width LED bar ──
-  const tailBar = new THREE.Mesh(new THREE.BoxGeometry(1.40*s, 0.08*s, 0.07*s),
-    new THREE.MeshStandardMaterial({color:0xff1100,
-      emissive:new THREE.Color(0xff1100), emissiveIntensity:3.5}));
-  tailBar.position.set(0, 0.78*s, -2.00*s); grp.add(tailBar); // part 74
-
-  // Individual tail light clusters
-  for(const tx of [-0.74*s, 0.74*s]){
-    const tlHousing = new THREE.Mesh(new THREE.BoxGeometry(0.32*s, 0.18*s, 0.10*s),
-      new THREE.MeshStandardMaterial({color:0x550000, roughness:0.20, metalness:0.40}));
-    tlHousing.position.set(tx, 0.62*s, -2.00*s); grp.add(tlHousing); // parts 75-76
-    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.24*s, 0.12*s, 0.09*s),
-      new THREE.MeshStandardMaterial({color:0xff2200,
-        emissive:new THREE.Color(0xff2200), emissiveIntensity:5.5}));
-    tl.position.set(tx, 0.62*s, -2.00*s); grp.add(tl); // parts 77-78
-    // Brake light dot
-    const brkDot = new THREE.Mesh(new THREE.CylinderGeometry(0.04*s, 0.04*s, 0.05*s, 8),
-      new THREE.MeshStandardMaterial({color:0xff4422, emissive:new THREE.Color(0xff4422), emissiveIntensity:4.0}));
-    brkDot.rotation.x = Math.PI/2; brkDot.position.set(tx, 0.50*s, -2.01*s); grp.add(brkDot); // parts 79-80
-  }
-
-  // ── HEADLIGHTS ──
-  for(const hx of [-0.74*s, 0.74*s]){
-    // Headlight housing (clear lens)
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.36*s, 0.20*s, 0.10*s),
-      new THREE.MeshStandardMaterial({color:0xcccccc, roughness:0.08, metalness:0.65}));
-    housing.position.set(hx, 0.62*s, 2.00*s); grp.add(housing); // parts 81-82
-    // Main LED emitter
-    const led = new THREE.Mesh(new THREE.BoxGeometry(0.28*s, 0.10*s, 0.08*s),
-      new THREE.MeshStandardMaterial({color:0xffffff,
-        emissive:new THREE.Color(0xffffff), emissiveIntensity:7.0, roughness:0.0}));
-    led.position.set(hx, 0.62*s, 2.01*s); grp.add(led); // parts 83-84
-    // DRL strip in housing
-    const drl2 = new THREE.Mesh(new THREE.BoxGeometry(0.30*s, 0.04*s, 0.06*s),
-      new THREE.MeshStandardMaterial({color:0xffffff,
-        emissive:new THREE.Color(0xffffff), emissiveIntensity:4.0}));
-    drl2.position.set(hx, 0.74*s, 2.01*s); grp.add(drl2); // parts 85-86
-  }
-
-  // ── SPOILER — wide flat wing with end plates ──
-  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.68*s, 0.09*s, 0.40*s), accentMat());
-  spoiler.position.set(0, 1.22*s, -1.02*s); grp.add(spoiler); // part 87
-  for(const sx of [-0.84*s, 0.84*s]){
-    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.09*s, 0.22*s, 0.40*s),
-      new THREE.MeshStandardMaterial({color:accentC.clone().multiplyScalar(0.72).getHex(), roughness:0.35}));
-    ep.position.set(sx, 1.16*s, -1.02*s); grp.add(ep); // parts 88-89
-    // Aluminum upright strut
-    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.034*s, 0.034*s, 0.28*s, 6),
-      new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.84, roughness:0.18}));
-    up.position.set(sx, 1.06*s, -1.02*s); grp.add(up); // parts 90-91
-  }
-
-  // ── SIDE MIRRORS ──
-  for(const sx of [-0.99*s, 0.99*s]){
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.030*s, 0.030*s, 0.30*s, 7),
-      darkMat(darkBodyC.getHex()));
-    arm.rotation.z = Math.PI/2;
-    arm.position.set(sx + (sx>0 ? 0.15*s : -0.15*s), 0.92*s, 0.62*s); grp.add(arm); // parts 92-93
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.26*s, 0.16*s, 0.10*s),
-      darkMat(darkBodyC.getHex()));
-    head.position.set(sx + (sx>0 ? 0.22*s : -0.22*s), 0.91*s, 0.62*s); grp.add(head); // parts 94-95
-    const mirrorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.20*s, 0.12*s),
-      new THREE.MeshStandardMaterial({color:0x88aabb, roughness:0.03, metalness:0.90}));
-    mirrorGlass.rotation.y = sx>0 ? Math.PI/2 : -Math.PI/2;
-    mirrorGlass.position.set(sx + (sx>0 ? 0.24*s : -0.24*s), 0.91*s, 0.62*s); grp.add(mirrorGlass); // parts 96-97
-  }
-
-  // ── WHEELS — 4 corners, large with 5 spokes ──
-  for(const [wx, wz] of [[-1.02,-1.22],[1.02,-1.22],[-1.02,1.22],[1.02,1.22]]){
+  // ── WHEELS — 4 corners ──
+  for(const [wx, wz] of [[-1.02,-1.18],[1.02,-1.18],[-1.02,1.18],[1.02,1.18]]){
     const side = wx > 0 ? 1 : -1;
-    // Outer tire body
+    // Tire
     const tire = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.42*s, 0.42*s, 0.36*s, 22),
+      new THREE.CylinderGeometry(0.40*s, 0.40*s, 0.34*s, 22),
       rubberMat()
     );
-    tire.rotation.z = Math.PI/2; tire.position.set(wx*s, 0.42*s, wz*s);
-    tire.castShadow=true; grp.add(tire);
-    // Sidewall TorusGeometry ring
+    tire.rotation.z = Math.PI/2;
+    tire.position.set(wx*s, 0.40*s, wz*s);
+    tire.castShadow = true;
+    grp.add(tire);
+    // Sidewall torus (inner)
     const sidewall = new THREE.Mesh(
-      new THREE.TorusGeometry(0.37*s, 0.06*s, 10, 22),
-      new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.98}));
+      new THREE.TorusGeometry(0.35*s, 0.055*s, 10, 22),
+      new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.98})
+    );
     sidewall.rotation.y = Math.PI/2;
-    sidewall.position.set(wx*s + side*0.16*s, 0.42*s, wz*s); grp.add(sidewall);
-    // Outer sidewall torus
-    const sidewall2 = new THREE.Mesh(
-      new THREE.TorusGeometry(0.37*s, 0.06*s, 10, 22),
-      new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.98}));
-    sidewall2.rotation.y = Math.PI/2;
-    sidewall2.position.set(wx*s - side*0.16*s, 0.42*s, wz*s); grp.add(sidewall2);
-    // Rim disc (alloy face) — outer side only
+    sidewall.position.set(wx*s + side*0.15*s, 0.40*s, wz*s);
+    grp.add(sidewall);
+    // Sidewall torus (outer)
+    const sidewall2 = sidewall.clone();
+    sidewall2.position.set(wx*s - side*0.15*s, 0.40*s, wz*s);
+    grp.add(sidewall2);
+    // Alloy rim disc
     const rimDisc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.30*s, 0.30*s, 0.06*s, 22),
+      new THREE.CylinderGeometry(0.28*s, 0.28*s, 0.06*s, 22),
       rimMat()
     );
     rimDisc.rotation.z = Math.PI/2;
-    rimDisc.position.set(wx*s + side*0.18*s, 0.42*s, wz*s); grp.add(rimDisc);
+    rimDisc.position.set(wx*s + side*0.17*s, 0.40*s, wz*s);
+    grp.add(rimDisc);
     // 5 spokes
     for(let sp=0; sp<5; sp++){
       const angle = sp/5*Math.PI*2;
       const spoke = new THREE.Mesh(
-        new THREE.BoxGeometry(0.055*s, 0.36*s, 0.055*s),
-        new THREE.MeshStandardMaterial({color:0xcccccc, metalness:0.96, roughness:0.07}));
-      spoke.position.set(
-        wx*s + side*0.19*s,
-        0.42*s + Math.sin(angle)*0.14*s,
-        wz*s  + Math.cos(angle)*0.14*s
+        new THREE.BoxGeometry(0.05*s, 0.32*s, 0.05*s),
+        new THREE.MeshStandardMaterial({color:0xcccccc, metalness:0.96, roughness:0.07})
       );
-      spoke.rotation.z = Math.PI/2; grp.add(spoke);
+      spoke.position.set(
+        wx*s + side*0.18*s,
+        0.40*s + Math.sin(angle)*0.13*s,
+        wz*s  + Math.cos(angle)*0.13*s
+      );
+      spoke.rotation.z = Math.PI/2;
+      grp.add(spoke);
     }
-    // Center hub cap
+    // Center hub
     const cap = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.11*s, 0.11*s, 0.08*s, 10),
-      new THREE.MeshStandardMaterial({color:0x222222, metalness:0.80, roughness:0.25}));
+      new THREE.CylinderGeometry(0.10*s, 0.10*s, 0.07*s, 10),
+      new THREE.MeshStandardMaterial({color:0x222222, metalness:0.80, roughness:0.25})
+    );
     cap.rotation.z = Math.PI/2;
-    cap.position.set(wx*s + side*0.20*s, 0.42*s, wz*s); grp.add(cap);
-    // 5 lug nuts around hub
+    cap.position.set(wx*s + side*0.19*s, 0.40*s, wz*s);
+    grp.add(cap);
+    // 5 lug nuts
     for(let ln=0; ln<5; ln++){
-      const langle = ln/5*Math.PI*2;
-      const lug = new THREE.Mesh(new THREE.CylinderGeometry(0.025*s, 0.025*s, 0.05*s, 6),
+      const la = ln/5*Math.PI*2;
+      const lug = new THREE.Mesh(new THREE.CylinderGeometry(0.022*s, 0.022*s, 0.04*s, 6),
         new THREE.MeshStandardMaterial({color:0x888888, metalness:0.9}));
       lug.rotation.z = Math.PI/2;
-      lug.position.set(
-        wx*s + side*0.21*s,
-        0.42*s + Math.sin(langle)*0.19*s,
-        wz*s  + Math.cos(langle)*0.19*s
-      );
+      lug.position.set(wx*s + side*0.20*s, 0.40*s + Math.sin(la)*0.17*s, wz*s + Math.cos(la)*0.17*s);
       grp.add(lug);
     }
-    // Brake disc (gunmetal)
+    // Brake disc
     const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24*s, 0.24*s, 0.05*s, 14),
-      new THREE.MeshStandardMaterial({color:0x555566, metalness:0.75, roughness:0.45}));
+      new THREE.CylinderGeometry(0.22*s, 0.22*s, 0.045*s, 14),
+      new THREE.MeshStandardMaterial({color:0x555566, metalness:0.75, roughness:0.45})
+    );
     disc.rotation.z = Math.PI/2;
-    disc.position.set(wx*s + side*0.13*s, 0.42*s, wz*s); grp.add(disc);
-    // Red brake caliper
-    const cal = new THREE.Mesh(new THREE.BoxGeometry(0.05*s, 0.20*s, 0.14*s),
+    disc.position.set(wx*s + side*0.12*s, 0.40*s, wz*s);
+    grp.add(disc);
+    // Brake caliper
+    const cal = new THREE.Mesh(new THREE.BoxGeometry(0.05*s, 0.18*s, 0.13*s),
       new THREE.MeshStandardMaterial({color:0xcc1111, roughness:0.55}));
-    cal.position.set(wx*s + side*0.12*s, 0.56*s, wz*s); grp.add(cal);
+    cal.position.set(wx*s + side*0.11*s, 0.54*s, wz*s);
+    grp.add(cal);
   }
 
-  // ── WHEEL ARCH TRIM (torus half-rings) ──
-  for(const [wx, wz] of [[-1.02,-1.22],[1.02,-1.22],[-1.02,1.22],[1.02,1.22]]){
+  // ── WHEEL ARCH TRIM ──
+  for(const [wx, wz] of [[-1.02,-1.18],[1.02,-1.18],[-1.02,1.18],[1.02,1.18]]){
     const arch = new THREE.Mesh(
-      new THREE.TorusGeometry(0.44*s, 0.04*s, 7, 16, Math.PI),
-      new THREE.MeshStandardMaterial({color:darkBodyC.getHex(), roughness:0.55, metalness:0.22}));
+      new THREE.TorusGeometry(0.42*s, 0.035*s, 7, 16, Math.PI),
+      new THREE.MeshStandardMaterial({color:darkBodyC.getHex(), roughness:0.55, metalness:0.22})
+    );
     arch.rotation.z = Math.PI/2;
     arch.rotation.y = wz>0 ? 0 : Math.PI;
-    arch.position.set(wx*s, 0.44*s, wz*s); grp.add(arch);
+    arch.position.set(wx*s, 0.42*s, wz*s);
+    grp.add(arch);
   }
 
   grp.castShadow = true;
