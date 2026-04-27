@@ -1005,7 +1005,10 @@ function makeAsphaltTexture(){
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   // Tighter repeat at high-res = more surface detail visible
-  tex.repeat.set(size >= 1024 ? 3 : 2, size >= 1024 ? 8 : 6);
+  // repeat calibrated to road geometry: road is 11.4 wide × 40 long per segment
+  // tile size ~4m × 4m = square tiles, repeat(3,10) gives correct proportions
+  // UV scroll: dz / (40/10) = dz / 4 per frame (exact match to road movement)
+  tex.repeat.set(3, 10);
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
 }
@@ -1032,23 +1035,22 @@ const asphaltRoughTex = (function makeAsphaltRoughness(){
 })();
 
 // Road — full PBR asphalt with wet-sheen clearcoat
-const roadMat = new THREE.MeshPhysicalMaterial({
+const roadMat = new THREE.MeshStandardMaterial({
   color: 0x141418,
   map: asphaltTex,
-  roughness: 0.88,
+  roughness: 0.90,
   metalness: 0.0,
-  clearcoat: 0.0,       // no clearcoat = no env map reflections on road
-  envMapIntensity: 0.0, // zero = environment colors cannot bleed onto road
-  reflectivity: 0.0,
+  envMapIntensity: 0.0, // zero = no env color bleed onto road
 });
-const shoulderMat = new THREE.MeshPhysicalMaterial({
-  color: 0x1a1a1e,  // dark asphalt-gray shoulder — no tan/brown
-  roughness: 0.98,
+const shoulderMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1a1e,
+  roughness: 0.96,
   metalness: 0.0,
 });
 // Lane lines — white dashed, subtle glow (not orange/gold)
-const lineMat = new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.35, emissive:new THREE.Color(0xffffff), emissiveIntensity:0.6});
-const edgeLineMat = new THREE.MeshStandardMaterial({color:0xeeeeee, roughness:0.35, emissive:new THREE.Color(0xdddddd), emissiveIntensity:0.4});
+// Lane lines — pure white, NO emissive (emissive on wide horizontal surfaces causes bloom streaks)
+const lineMat = new THREE.MeshStandardMaterial({color:0xdadada, roughness:0.30, metalness:0.0});
+const edgeLineMat = new THREE.MeshStandardMaterial({color:0xe8e8e8, roughness:0.28, metalness:0.0});
 const groundMat = new THREE.MeshPhysicalMaterial({
   color: 0x2a3020,  // neutral dark green-gray — overridden per-state anyway
   roughness: 1.0,
@@ -1070,57 +1072,66 @@ scene.add(groundMesh);
 
 function buildRoadSegment(){
   const grp = new THREE.Group();
-  // Road surface
+
+  // ── Road surface ─────────────────────────────────────
   const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF*2, SEGMENT_LEN), roadMat);
-  road.rotation.x=-Math.PI/2; road.receiveShadow=true; road.position.y=0.001;
+  road.rotation.x = -Math.PI/2;
+  road.receiveShadow = true;
+  road.position.y = 0.001;
   grp.add(road);
-  // Gravel shoulders
-  for(const sx of [-ROAD_HALF-0.7, ROAD_HALF+0.7]){
-    const sh=new THREE.Mesh(new THREE.PlaneGeometry(1.2,SEGMENT_LEN),shoulderMat);
-    sh.rotation.x=-Math.PI/2; sh.position.set(sx,0.001,0); sh.receiveShadow=true;
+
+  // ── Shoulders ────────────────────────────────────────
+  for(const sx of [-ROAD_HALF - 0.7, ROAD_HALF + 0.7]){
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.4, SEGMENT_LEN), shoulderMat);
+    sh.rotation.x = -Math.PI/2;
+    sh.position.set(sx, 0.001, 0);
+    sh.receiveShadow = true;
     grp.add(sh);
   }
-  // Rumble strips — only on road edges, very subtle raised concrete
-  for(const sx of [-ROAD_HALF+0.22, ROAD_HALF-0.22]){
-    const rumblePlane=new THREE.Mesh(
-      new THREE.BoxGeometry(0.32, 0.015, SEGMENT_LEN),
-      new THREE.MeshStandardMaterial({color:0x787878, roughness:0.90, metalness:0.0})
-    );
-    rumblePlane.position.set(sx, 0.016, 0);
-    grp.add(rumblePlane);
+
+  // ── Rumble strips (edges) ─────────────────────────────
+  const rumbleMat = new THREE.MeshStandardMaterial({color:0x888888, roughness:0.88, metalness:0.0});
+  for(const sx of [-ROAD_HALF + 0.22, ROAD_HALF - 0.22]){
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.012, SEGMENT_LEN), rumbleMat);
+    r.position.set(sx, 0.014, 0);
+    grp.add(r);
   }
-  // Guardrail posts (every 8m)
-  const postMat=new THREE.MeshStandardMaterial({color:0x778888,metalness:0.65,roughness:0.4});
-  const railMat=new THREE.MeshStandardMaterial({color:0xaabbaa,metalness:0.8,roughness:0.25});
-  for(const sx of [-ROAD_HALF-1.35, ROAD_HALF+1.35]){
-    const posts=Math.floor(SEGMENT_LEN/8);
-    for(let p=0;p<posts;p++){
-      const post=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.07,1.1,6),postMat);
-      post.position.set(sx,0.55,-SEGMENT_LEN/2+p*8+4);
-      post.castShadow=true; grp.add(post);
+
+  // ── Guardrail — single beam per side (no posts, saves ~140 draw calls per segment recycle) ──
+  const railMat = new THREE.MeshStandardMaterial({color:0xaabcaa, metalness:0.82, roughness:0.22});
+  for(const sx of [-ROAD_HALF - 1.30, ROAD_HALF + 1.30]){
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, SEGMENT_LEN), railMat);
+    rail.position.set(sx, 0.70, 0);
+    grp.add(rail);
+    // Just 2 end-posts per segment instead of 5 — enough to sell the illusion at speed
+    for(const pz of [-SEGMENT_LEN * 0.48, SEGMENT_LEN * 0.48]){
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.10, 1.10, 0.10),
+        new THREE.MeshStandardMaterial({color:0x667777, metalness:0.60, roughness:0.45}));
+      post.position.set(sx, 0.55, pz);
+      grp.add(post);
     }
-    // Horizontal rail beam
-    const rail=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.18,SEGMENT_LEN),railMat);
-    rail.position.set(sx,0.72,0); rail.castShadow=true; grp.add(rail);
   }
-  // (duplicate guardrail set removed — perf)
-  // Lane dashes — white, standard highway spacing
-  for(let l=1;l<LANE_COUNT;l++){
-    const lx=-ROAD_HALF+l*LANE_WIDTH;
-    const dashes=5;
-    for(let d=0;d<dashes;d++){
-      const ln=new THREE.Mesh(new THREE.PlaneGeometry(0.20, 2.4), lineMat);
-      ln.rotation.x=-Math.PI/2;
-      ln.position.set(lx, 0.005, (-SEGMENT_LEN/2)+(d+0.5)*(SEGMENT_LEN/dashes));
+
+  // ── Lane dashes — white, standard highway spacing ─────
+  for(let l = 1; l < LANE_COUNT; l++){
+    const lx = -ROAD_HALF + l * LANE_WIDTH;
+    const dashCount = 4;
+    for(let d = 0; d < dashCount; d++){
+      const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), lineMat);
+      ln.rotation.x = -Math.PI/2;
+      ln.position.set(lx, 0.006, (-SEGMENT_LEN / 2) + (d + 0.5) * (SEGMENT_LEN / dashCount));
       grp.add(ln);
     }
   }
-  // Edge lines (solid white)
-  for(const ex of [-ROAD_HALF+0.12, ROAD_HALF-0.12]){
-    const el=new THREE.Mesh(new THREE.PlaneGeometry(0.18, SEGMENT_LEN), edgeLineMat);
-    el.rotation.x=-Math.PI/2; el.position.set(ex, 0.004, 0);
+
+  // ── Edge lines (solid white) ──────────────────────────
+  for(const ex of [-ROAD_HALF + 0.12, ROAD_HALF - 0.12]){
+    const el = new THREE.Mesh(new THREE.PlaneGeometry(0.16, SEGMENT_LEN), edgeLineMat);
+    el.rotation.x = -Math.PI/2;
+    el.position.set(ex, 0.005, 0);
     grp.add(el);
   }
+
   return grp;
 }
 
@@ -4044,8 +4055,14 @@ function loop(ts){
     justP['ArrowLeft']=justP['ArrowRight']=justP['KeyA']=justP['KeyD']=justP['Space']=false;
     accumulator-=TICK;
   }
-  // UV-scroll asphalt texture every frame
-  if(asphaltTex) asphaltTex.offset.y -= 0.003 * Math.min(G.currentSpeed / 22, 2.2);
+  // UV-scroll asphalt texture — driven by G.currentSpeed * dt, matched to geometry
+  // repeat.set(3,8) over SEGMENT_LEN=40 → tile height = 5 world-units
+  // Must use same dt as geometry so texture tracks the road exactly
+  if(asphaltTex && gamePhase === 'playing'){
+    const _dz = G.currentSpeed * dt;
+    const _texTileH = SEGMENT_LEN / (asphaltTex.repeat.y > 0 ? asphaltTex.repeat.y : 6);
+    asphaltTex.offset.y -= _dz / _texTileH;
+  }
 
   // Post-processing render (bloom pass)
   if(composer) {
