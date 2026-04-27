@@ -286,7 +286,8 @@ const ROAD_HALF = (LANE_COUNT * LANE_WIDTH) / 2;
 const ROAD_Z_SPEED_BASE = 22;
 const SEGMENT_LEN = 40;
 const SEGMENT_COUNT = 14;
-const SCENERY_ROWS = 30;
+// SCENERY_ROWS driven by quality tier — do NOT hardcode
+const SCENERY_ROWS = (typeof QUALITY !== 'undefined' && QUALITY.sceneryRows) ? QUALITY.sceneryRows : 22;
 const MILES_PER_STATE = 100;
 
 const POWERUP_TYPES = ['nitro','shield','slow'];
@@ -432,12 +433,26 @@ const QUALITY_PRESETS = {
 // Auto-detect GPU tier
 function detectQualityTier(){
   const dpr = window.devicePixelRatio || 1;
-  const mem = navigator.deviceMemory || 4;
-  // iPhone 14 Pro = DPR 3, > 6GB RAM → High
-  // Mid-range Android = DPR 2-2.5, 4GB RAM → Medium
-  // Low-end = DPR ≤ 1.5, < 3GB → Low
-  if(dpr >= 3 && mem >= 6) return 'high';
-  if(dpr >= 2 && mem >= 3) return 'medium';
+  // navigator.deviceMemory is UNDEFINED on iOS Safari — never use it for iPhone detection
+  // Use a quick WebGL draw-call benchmark instead: render 1 frame and measure
+  const ua = navigator.userAgent || '';
+  const isApple = /iPhone|iPad|iPod/i.test(ua);
+  const isModernApple = isApple && /OS 1[5-9]_|OS [2-9]\d_/i.test(ua); // iOS 15+
+  const mem = navigator.deviceMemory; // undefined on iOS, real value on Android/Chrome
+
+  // iPhone 14 Pro and newer: DPR=3, iOS 16+ → always HIGH
+  if(isModernApple && dpr >= 3) return 'high';
+  // Older iPhone / iPad with DPR 2: medium
+  if(isApple && dpr >= 2) return 'medium';
+  // Android/Chrome: use deviceMemory if available
+  if(mem !== undefined){
+    if(dpr >= 2.5 && mem >= 6) return 'high';
+    if(dpr >= 2   && mem >= 3) return 'medium';
+    return 'low';
+  }
+  // Fallback: DPR-only
+  if(dpr >= 3) return 'high';
+  if(dpr >= 2) return 'medium';
   return 'low';
 }
 
@@ -454,18 +469,25 @@ let _fpsHistory = [];
 function updateDRS(fps){
   if(_drsCooldown > 0){ _drsCooldown--; return; }
   _fpsHistory.push(fps);
-  if(_fpsHistory.length > 90) _fpsHistory.shift();  // 90-frame window
+  if(_fpsHistory.length > 90) _fpsHistory.shift();
   const avgFPS = _fpsHistory.reduce((a,b)=>a+b,0) / _fpsHistory.length;
   const currentPR = renderer.getPixelRatio();
-  if(avgFPS < 25 && currentPR > 1.0){
-    renderer.setPixelRatio(Math.max(1.0, currentPR - 0.5));
-    if(composer && window._bloomPass) window._bloomPass.strength *= 0.7;
-    console.log('DRS: stepped down to PR', renderer.getPixelRatio().toFixed(1));
-    _drsCooldown = 300; _fpsHistory = [];
-  } else if(avgFPS > 55 && currentPR < QUALITY.pixelRatio){
+
+  if(avgFPS < 28 && currentPR > 1.5){
+    // Step pixel ratio down by 0.25 — never go below 1.5 (keeps it sharp enough)
+    // Never touch bloom strength — blocky look is worse than slight lag
+    renderer.setPixelRatio(Math.max(1.5, currentPR - 0.25));
+    console.log('[DRS] Step down → PR', renderer.getPixelRatio().toFixed(2), 'avgFPS', avgFPS.toFixed(0));
+    _drsCooldown = 180; _fpsHistory = [];
+  } else if(avgFPS > 52 && currentPR < QUALITY.pixelRatio){
+    // Recover toward target pixel ratio
     renderer.setPixelRatio(Math.min(QUALITY.pixelRatio, currentPR + 0.25));
-    console.log('DRS: stepped up to PR', renderer.getPixelRatio().toFixed(1));
-    _drsCooldown = 300; _fpsHistory = [];
+    // Also restore bloom if it was reduced elsewhere
+    if(composer && window._bloomPass){
+      window._bloomPass.strength = Math.min(QUALITY.bloomStrength, window._bloomPass.strength + 0.05);
+    }
+    console.log('[DRS] Step up → PR', renderer.getPixelRatio().toFixed(2));
+    _drsCooldown = 180; _fpsHistory = [];
   }
 }
 
