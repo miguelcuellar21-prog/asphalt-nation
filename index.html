@@ -420,12 +420,12 @@ const QUALITY_PRESETS = {
     shadowMap: true,
     shadowMapSize: 1024,
     bloomEnabled: true,
-    bloomStrength: 0.50,
+    bloomStrength: 0.65,      // stronger bloom = headlights glow properly at night
     sceneryRows: 26,
     asphaltTexSize: 1024,
     anisotropy: 8,
     weatherParticles: 1600,
-    physicallyCorrect: false,  // saves ~15% GPU on mobile vs true
+    physicallyCorrect: false,
     maxTrucks: 8,
   },
 };
@@ -496,7 +496,7 @@ renderer.setPixelRatio(QUALITY.pixelRatio);
 renderer.shadowMap.enabled = QUALITY.shadowMap;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = _qualityTier === 'low' ? THREE.LinearToneMapping : THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.85;  // reduced to minimize warm cast from ACESFilmic
+renderer.toneMappingExposure = 1.05;  // slightly brighter — details pop, no more muddy darks
 renderer.outputEncoding = THREE.sRGBEncoding || 3001;
 renderer.physicallyCorrectLights = QUALITY.physicallyCorrect;
 
@@ -525,7 +525,7 @@ camera.lookAt(0, 0.0, -14);
     // High threshold (0.72) = only truly bright emissives (LEDs, tail-lights) bloom
     const bp = new THREE.UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      QUALITY.bloomStrength, 0.30, 0.85  // threshold 0.72→0.85: only intense emissives bloom, no streak bleed
+      QUALITY.bloomStrength, 0.22, 0.90  // radius 0.22=tight halo, threshold 0.90=only true emissives (headlights/taillights)d
     );
     composer.addPass(rp);
     if(QUALITY.bloomEnabled) composer.addPass(bp);
@@ -540,39 +540,43 @@ camera.lookAt(0, 0.0, -14);
 })();
 
 // ─── LIGHTS ───
-const ambient = new THREE.AmbientLight(0xffffff, 0.35);
+// Philosophy: one dominant white sun (key), cool blue rim (separation),
+// neutral hemisphere (sky bounce), NO warm orange fills (they muddy paint & road)
+const ambient = new THREE.AmbientLight(0xffffff, 0.28);
 scene.add(ambient);
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);  // neutral white sun — warm color was causing brown road bleed
-sun.position.set(12, 28, 14);
+
+// Key light — bright white sun, high angle, strong shadows
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(14, 32, 12);
 sun.castShadow = true;
 sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
 sun.shadow.camera.near = 0.5;
 sun.shadow.camera.far = 180;
 sun.shadow.camera.left = -60; sun.shadow.camera.right = 60;
-sun.shadow.camera.top = 60; sun.shadow.camera.bottom = -60;
-sun.shadow.bias = -0.0003;
+sun.shadow.camera.top = 60;  sun.shadow.camera.bottom = -60;
+sun.shadow.bias = -0.0002;
 scene.add(sun);
-// Hemisphere sky/ground bounce
-const hemiLight = new THREE.HemisphereLight(0x8899cc, 0x222222, 0.5);  // neutral dark ground bounce — was 0x443322 (warm brown bleeding up)
+
+// Hemisphere — cool blue sky top, near-black ground (no warm bleed)
+const hemiLight = new THREE.HemisphereLight(0x99aacc, 0x111118, 0.55);
 scene.add(hemiLight);
-// Rim light — strong separation from behind
-const rimLight = new THREE.DirectionalLight(0x4466aa, 1.1); // cooler blue rim
-rimLight.position.set(0, 10, 22);
+
+// Rim light — strong cool-blue backlight, separates car from road
+const rimLight = new THREE.DirectionalLight(0x5588cc, 1.8);
+rimLight.position.set(0, 8, 24);
 scene.add(rimLight);
-// Player headlight — SF90 xenon white (Setup B spec)
-const headlight = new THREE.PointLight(0xFFF5E0, 2.2, 65);
+
+// Car fill — neutral white from below, lifts shadow areas without color cast
+const headlight = new THREE.PointLight(0xffffff, 1.8, 60);
 scene.add(headlight);
-// Undercar warm ground bounce (makes paint clearcoat glow from below)
-const carFill = new THREE.PointLight(0xff7733, 0.6, 10);
+const carFill = new THREE.PointLight(0xaabbcc, 0.5, 12);  // cool fill only
 scene.add(carFill);
-// Warm fill from road bounce
-const fillLight = new THREE.PointLight(0xff8833, 0.55, 24);
-fillLight.position.set(0, -1, 6);
-scene.add(fillLight);
-// Second subtle fill from left
-const fill2 = new THREE.PointLight(0x6688aa, 0.3, 30);
-fill2.position.set(-8, 4, 0);
+
+// Subtle cool fill from left — adds depth to car silhouette
+const fill2 = new THREE.PointLight(0x7799bb, 0.35, 28);
+fill2.position.set(-10, 5, 0);
 scene.add(fill2);
+const fillLight = fill2; // alias so applyEnvironment still works
 
 // ─── ENVIRONMENT MAP (PMREMGenerator) — enables clearcoat + paint reflections ───
 // Build a simple gradient envMap from scene lights so MeshPhysicalMaterial clearcoat reflects it
@@ -583,28 +587,36 @@ scene.add(fill2);
   // Cars and chrome parts reflect this — better colors = better reflections
   const skyScene = new THREE.Scene();
 
-  // Sky dome — cool blue-gray (not warm, so no brown cast on car paint)
-  const skyGeo = new THREE.SphereGeometry(50, 20, 10);
-  const skyMat = new THREE.MeshBasicMaterial({color:0x6688bb, side:THREE.BackSide});
+  // Sky dome — deep blue gradient (top of car hood reflects this strongly)
+  const skyGeo = new THREE.SphereGeometry(50, 24, 12);
+  const skyMat = new THREE.MeshBasicMaterial({color:0x1a3a6e, side:THREE.BackSide});
   skyScene.add(new THREE.Mesh(skyGeo, skyMat));
 
-  // Bright white sun highlight (gives chrome/clearcoat specular pop)
-  const sunGeo = new THREE.SphereGeometry(4, 10, 8);
+  // Bright hard sun disc — gives chrome + clearcoat a sharp specular highlight
+  const sunGeo = new THREE.SphereGeometry(5, 12, 10);
   const sunMesh = new THREE.Mesh(sunGeo, new THREE.MeshBasicMaterial({color:0xFFFFFF}));
-  sunMesh.position.set(15, 35, -25);
+  sunMesh.position.set(14, 38, -22);
   skyScene.add(sunMesh);
 
-  // Secondary warm fill from low angle (catches hood/roof)
-  const fillGeo = new THREE.SphereGeometry(2.5, 8, 6);
-  const fillMesh = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({color:0xFFEECC}));
-  fillMesh.position.set(-20, 10, -40);
+  // Cool blue sky fill (opposite side) — gives car underside blue bounce
+  const fillGeo = new THREE.SphereGeometry(3, 8, 6);
+  const fillMesh = new THREE.Mesh(fillGeo, new THREE.MeshBasicMaterial({color:0x4488ee}));
+  fillMesh.position.set(-22, 18, 30);
   skyScene.add(fillMesh);
 
-  // Dark ground plane reflection (black asphalt under cars)
+  // Very dark near-black ground plane — sharp contrast under car belly
   const gndGeo = new THREE.PlaneGeometry(100, 100);
-  const gndMesh = new THREE.Mesh(gndGeo, new THREE.MeshBasicMaterial({color:0x111114}));
+  const gndMesh = new THREE.Mesh(gndGeo, new THREE.MeshBasicMaterial({color:0x080810}));
   gndMesh.rotation.x = -Math.PI/2; gndMesh.position.y = -5;
   skyScene.add(gndMesh);
+
+  // Horizon glow — thin bright band at eye level (city at night effect)
+  const horizGeo = new THREE.SphereGeometry(48, 24, 4);
+  const horizMat = new THREE.MeshBasicMaterial({color:0x223366, side:THREE.BackSide});
+  const horizMesh = new THREE.Mesh(horizGeo, horizMat);
+  horizMesh.scale.set(1, 0.08, 1);
+  horizMesh.position.y = 2;
+  skyScene.add(horizMesh);
 
   const envRT = pmrem.fromScene(skyScene, 0.04, 0.1, 200);
   scene.environment = envRT.texture;
@@ -956,73 +968,84 @@ function makeAsphaltTexture(){
   const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
   const ctx = cv.getContext('2d');
 
-  // 1. Base — very dark neutral gray asphalt (#141416 avoids warm cast under ACESFilmic)
-  ctx.fillStyle = '#141416';
+  // 1. Base — true dark asphalt. Slightly blue-black so it reads cold under white sun.
+  ctx.fillStyle = '#111115';
   ctx.fillRect(0, 0, size, size);
 
-  // 2. Large aggregate — coarse gravel stones at varying gray values
-  const stoneCount = Math.floor(size * size * 0.055);
+  // 2. Coarse aggregate — more contrast: range 8–70 (dark) vs 160–240 (bright chips)
+  //    This gives the road a grainy, gritty texture that reads clearly at speed
+  const stoneCount = Math.floor(size * size * 0.07);
   for(let i = 0; i < stoneCount; i++){
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const v = Math.floor(Math.random() * 52 + 10); // 10–62, strictly neutral
-    const alpha = 0.28 + Math.random() * 0.52;
-    const sz2 = Math.random();
-    ctx.fillStyle = `rgba(${v},${v},${v},${alpha})`;
-    if(sz2 < 0.06){
-      // Larger aggregate chips
-      const r = Math.random() * 1.8 + 0.8;
+    const rnd = Math.random();
+    let v, alpha, w, h;
+    if(rnd < 0.04){
+      // Large bright quartz chips — high contrast, clearly visible
+      v = Math.floor(Math.random() * 60 + 180);
+      alpha = 0.55 + Math.random() * 0.35;
+      const r = Math.random() * 2.2 + 1.0;
+      ctx.fillStyle = `rgba(${v},${v},${v},${alpha})`;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
-    } else if(sz2 < 0.20){
-      // Mid-size angular pebbles
-      ctx.fillRect(x, y, Math.random()*1.4+0.5, Math.random()*1.0+0.4);
+    } else if(rnd < 0.14){
+      // Medium aggregate — mid gray angular chips
+      v = Math.floor(Math.random() * 50 + 55);
+      alpha = 0.50 + Math.random() * 0.35;
+      ctx.fillStyle = `rgba(${v},${v},${v},${alpha})`;
+      ctx.fillRect(x, y, Math.random()*2.0+0.8, Math.random()*1.4+0.6);
     } else {
-      // Fine speckling (most common)
+      // Fine grit — high density, full contrast range
+      v = Math.floor(Math.random() * 80 + 18);
+      alpha = 0.35 + Math.random() * 0.45;
+      ctx.fillStyle = `rgba(${v},${v},${v},${alpha})`;
       ctx.fillRect(x, y, 1, 1);
     }
   }
 
-  // 3. Light-colored aggregate highlights (white quartz chips — makes road look real)
-  for(let i = 0; i < Math.floor(size * 1.8); i++){
+  // 3. Bright specular chips — mica/quartz that catch light (high contrast pop)
+  for(let i = 0; i < Math.floor(size * 2.4); i++){
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const v = Math.floor(Math.random() * 40 + 180); // 180–220 bright
-    ctx.fillStyle = `rgba(${v},${v},${v},${0.12 + Math.random()*0.18})`;
+    const v = Math.floor(Math.random() * 55 + 200); // 200–255 bright
+    ctx.fillStyle = `rgba(${v},${v},${v},${0.30 + Math.random()*0.45})`;
     ctx.fillRect(x, y, 1, 1);
   }
 
-  // 4. Tar-strip seams (dark lines running across the road axis — no horizontal streaks)
-  for(let s = 0; s < 3; s++){
-    const x = Math.random() * size;
-    ctx.fillStyle = `rgba(0,0,0,${0.18 + Math.random()*0.14})`;
-    ctx.fillRect(x, 0, Math.random()*2+0.6, size); // VERTICAL seams only
+  // 4. Tar seams — 3–5 vertical dark strips (no horizontal — no streak artifacts)
+  for(let s = 0; s < 4; s++){
+    const x = (s + 0.5 + (Math.random()-0.5)*0.3) * (size/4);
+    ctx.fillStyle = `rgba(0,0,0,${0.35 + Math.random()*0.25})`;
+    ctx.fillRect(x - 1, 0, Math.random()*2.5+0.8, size);
   }
 
-  // 5. Fine surface cracks — thin, gray, neutral
-  for(let c = 0; c < 12; c++){
-    const alpha = 0.15 + Math.random() * 0.20;
-    ctx.strokeStyle = `rgba(80,80,80,${alpha})`;
-    ctx.lineWidth = 0.4 + Math.random() * 0.5;
+  // 5. Surface cracks — higher contrast, clearly readable
+  for(let c = 0; c < 16; c++){
+    const alpha = 0.22 + Math.random() * 0.28;
+    ctx.strokeStyle = `rgba(60,60,60,${alpha})`;
+    ctx.lineWidth = 0.5 + Math.random() * 0.7;
     ctx.beginPath();
     let cx = Math.random() * size, cy = Math.random() * size;
     ctx.moveTo(cx, cy);
-    for(let seg = 0; seg < 6; seg++){
-      cx += (Math.random() - 0.5) * 28;
-      cy += (Math.random() - 0.5) * 28;
+    for(let sg = 0; sg < 5; sg++){
+      cx += (Math.random() - 0.5) * 32;
+      cy += (Math.random() - 0.5) * 32;
       ctx.lineTo(cx, cy);
     }
     ctx.stroke();
   }
 
-  // 6. Worn tire path — subtle lighter strip down center
-  const grad = ctx.createLinearGradient(0, 0, size, 0);
-  grad.addColorStop(0, 'rgba(255,255,255,0)');
-  grad.addColorStop(0.35, 'rgba(255,255,255,0)');
-  grad.addColorStop(0.50, 'rgba(255,255,255,0.025)');
-  grad.addColorStop(0.65, 'rgba(255,255,255,0)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, size, size);
+  // 6. Worn center tire track — slightly lighter polished strip per lane
+  for(const lxFrac of [0.17, 0.50, 0.83]){
+    const g = ctx.createLinearGradient(0, 0, size, 0);
+    const c0 = lxFrac - 0.08, c1 = lxFrac + 0.08;
+    g.addColorStop(Math.max(0,c0-0.04), 'rgba(255,255,255,0)');
+    g.addColorStop(c0, 'rgba(255,255,255,0.018)');
+    g.addColorStop(lxFrac, 'rgba(255,255,255,0.032)');
+    g.addColorStop(c1, 'rgba(255,255,255,0.018)');
+    g.addColorStop(Math.min(1,c1+0.04), 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
 
   const tex = new THREE.CanvasTexture(cv);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -1196,76 +1219,78 @@ function buildCar(colorHex, accentHex, scale=1){
   const accentC  = new THREE.Color(accentHex);
   const darkBodyC= bodyC.clone().multiplyScalar(0.50);
   // ─── PBR MATERIALS — Ferrari SF90 Spec (metalness/roughness/clearcoat) ───
-  // Body paint: dielectric (metalness 0.0), mirror lacquer (roughness 0.09), full clearcoat
+  // ── PBR MATERIALS — tuned for maximum visual sharpness ──
+  // Body paint: dielectric lacquer, mirror-smooth, full clearcoat
+  // envMapIntensity 3.2 → sky/sun env map reflects HARD in the paint surface
   const bodyMat  = () => new THREE.MeshPhysicalMaterial({
     color: colorHex,
-    metalness: 0.0,            // paint is dielectric, not metal
-    roughness: 0.09,           // mirror-smooth lacquer
-    clearcoat: 1.0,            // full Ferrari clearcoat layer
-    clearcoatRoughness: 0.07,  // slightly imperfect clearcoat
-    envMapIntensity: 2.2,      // strong environment reflections
-    reflectivity: 0.95,
+    metalness: 0.0,
+    roughness: 0.06,           // near mirror-smooth
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,  // tight clearcoat = sharp specular highlight
+    envMapIntensity: 3.2,      // strong env reflection
+    reflectivity: 1.0,
   });
-  // Dark body panels: slightly rougher, still clearcoated
+  // Dark body panels: satin finish
   const darkMat  = (c=0x111111) => new THREE.MeshPhysicalMaterial({
     color: c,
     metalness: 0.0,
-    roughness: 0.55,
-    clearcoat: 0.2,
-    clearcoatRoughness: 0.4,
-    envMapIntensity: 0.8,
+    roughness: 0.42,
+    clearcoat: 0.45,
+    clearcoatRoughness: 0.22,
+    envMapIntensity: 1.4,
   });
-  // Chrome: metalness 1.0, near-zero roughness (exhaust, badge surround)
+  // Chrome: mirror metal — reflects env map with near-zero roughness
   const chromeMat= () => new THREE.MeshPhysicalMaterial({
     color: 0xEEEEFF,
     metalness: 1.0,
-    roughness: 0.03,
-    envMapIntensity: 2.5,
+    roughness: 0.02,           // true mirror
+    envMapIntensity: 3.5,
     reflectivity: 1.0,
   });
-  // Glass: deep tinted, high transmission
-  const glassMat = (op=0.72) => new THREE.MeshPhysicalMaterial({
-    color: 0x0a1a2e,
+  // Glass: deep blue tint, strong env reflection
+  const glassMat = (op=0.68) => new THREE.MeshPhysicalMaterial({
+    color: 0x081828,
     transparent: true,
     opacity: op,
     metalness: 0.0,
-    roughness: 0.04,
-    envMapIntensity: 1.8,
-    reflectivity: 0.9,
+    roughness: 0.02,
+    envMapIntensity: 2.5,
+    reflectivity: 1.0,
   });
-  // Accent (spoiler, sills): metallic painted
+  // Accent (spoiler, sills): satin metallic
   const accentMat= () => new THREE.MeshPhysicalMaterial({
     color: accentHex,
-    metalness: 0.55,
-    roughness: 0.22,
-    clearcoat: 0.6,
-    clearcoatRoughness: 0.12,
-    envMapIntensity: 1.6,
+    metalness: 0.65,
+    roughness: 0.16,
+    clearcoat: 0.8,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 2.4,
   });
-  // Rubber (tires): near-zero metalness, very rough
+  // Rubber (tires): matte black
   const rubberMat= () => new THREE.MeshPhysicalMaterial({
+    color: 0x0a0a0a,
+    metalness: 0.0,
+    roughness: 0.96,
+    envMapIntensity: 0.05,
+  });
+  // Alloy rim: polished brushed aluminium
+  const rimMat   = () => new THREE.MeshPhysicalMaterial({
+    color: 0xD8D8E0,
+    metalness: 0.98,
+    roughness: 0.04,           // near mirror
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 3.0,
+  });
+  // Carbon fibre: clearcoated dark gloss
+  const carbonMat= () => new THREE.MeshPhysicalMaterial({
     color: 0x0e0e0e,
     metalness: 0.0,
-    roughness: 0.95,
-    envMapIntensity: 0.1,
-  });
-  // Alloy rim: polished aluminium
-  const rimMat   = () => new THREE.MeshPhysicalMaterial({
-    color: 0xD0D0D8,
-    metalness: 0.96,
-    roughness: 0.06,
-    clearcoat: 0.4,
-    clearcoatRoughness: 0.05,
-    envMapIntensity: 2.0,
-  });
-  // Carbon fibre (roof, mirrors, splitter, diffuser)
-  const carbonMat= () => new THREE.MeshPhysicalMaterial({
-    color: 0x121212,
-    metalness: 0.0,
-    roughness: 0.18,
-    clearcoat: 0.95,           // always clearcoated
-    clearcoatRoughness: 0.04,
-    envMapIntensity: 1.8,
+    roughness: 0.12,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 2.4,
   });
 
   // ═══ WEDGE SUPERCAR BODY ═══
