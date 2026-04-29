@@ -625,7 +625,7 @@ const fillLight = fill2; // alias so applyEnvironment still works
 })();
 
 // ─── FOG ───
-scene.fog = new THREE.FogExp2(0x2a1a08, 0.014);
+scene.fog = new THREE.FogExp2(0x0a0a14, 0.016); // dark blue-black fog — sleek night highway feel
 
 // ─── RESIZE ───
 function resize(){
@@ -1080,12 +1080,73 @@ const asphaltRoughTex = (function makeAsphaltRoughness(){
 })();
 
 // Road — full PBR asphalt with wet-sheen clearcoat
-const roadMat = new THREE.MeshStandardMaterial({
-  color: 0x141418,
-  map: asphaltTex,
-  roughness: 0.90,
-  metalness: 0.0,
-  envMapIntensity: 0.0, // zero = no env color bleed onto road
+// Road material: canvas texture bakes lane lines + asphalt INTO one draw.
+// Zero z-fighting because there are no separate line meshes.
+function makeRoadTex(){
+  const W = 512, H = 512;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+
+  // 1. Pure black asphalt base
+  ctx.fillStyle = '#0e0e12';
+  ctx.fillRect(0,0,W,H);
+
+  // 2. Subtle grain — keep it very light so road stays dark/sleek
+  for(let i=0;i<W*H*0.04;i++){
+    const x=Math.random()*W, y=Math.random()*H;
+    const v=Math.floor(Math.random()*30+6);
+    const a=0.18+Math.random()*0.22;
+    ctx.fillStyle=`rgba(${v},${v},${v},${a})`;
+    ctx.fillRect(x,y,1,1);
+  }
+  // Bright mica chips — sparse so road stays clean
+  for(let i=0;i<W*0.8;i++){
+    const x=Math.random()*W, y=Math.random()*H;
+    const v=Math.floor(Math.random()*50+180);
+    ctx.fillStyle=`rgba(${v},${v},${v},${0.18+Math.random()*0.22})`;
+    ctx.fillRect(x,y,1,1);
+  }
+
+  // 3. Bake lane lines INTO texture as dashed white stripes
+  // Road UV goes 0→1 across width (ROAD_HALF*2 = 11.4 units)
+  // LANE_COUNT=3, LANE_WIDTH=3.8 → lane dividers at x=3.8 and x=7.6
+  // As fraction of road width: 3.8/11.4=0.333, 7.6/11.4=0.667
+  const laneXFracs = [1/3, 2/3]; // 2 dividers for 3 lanes
+  ctx.strokeStyle = 'rgba(230,230,230,0.85)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([38, 34]); // dash/gap in pixels (scaled to match real highway proportions)
+  ctx.lineDashOffset = 0;
+  for(const xf of laneXFracs){
+    const px = xf * W;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, H);
+    ctx.stroke();
+  }
+
+  // Solid edge lines
+  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(220,220,220,0.70)';
+  ctx.lineWidth = 4;
+  for(const xf of [0.02, 0.98]){
+    const px = xf * W;
+    ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  // repeat(1, 14) → texture covers full road width, repeats 14× along length
+  // → tile height = SEGMENT_LEN/14 ≈ 2.86 world-units → lane dashes are ~1.1m long
+  tex.repeat.set(1, 14);
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+const roadTex = makeRoadTex();
+const roadMat = new THREE.MeshBasicMaterial({
+  map: roadTex,
+  // MeshBasicMaterial: no lighting, no env reflections, completely immune to light bleeding
+  // This permanently eliminates warm-cast artifacts on the road surface
 });
 const shoulderMat = new THREE.MeshStandardMaterial({
   color: 0x1a1a1e,
@@ -1101,12 +1162,12 @@ const groundMat = new THREE.MeshPhysicalMaterial({
   roughness: 1.0,
   metalness: 0.0,
 });
-// Wet road overlay (used in rain biome)
+// Wet road overlay (used in rain biome) — uses roadTex (same canvas-baked texture)
 const wetRoadMat = new THREE.MeshPhysicalMaterial({
-  color:0x18202c, map:asphaltTex,
-  roughness:0.08, metalness:0.20,
-  clearcoat:1.0, clearcoatRoughness:0.04,
-  envMapIntensity:0.0,  // zero = no env color bleed on wet road
+  color:0x1a2030, map:roadTex,
+  roughness:0.04, metalness:0.18,
+  clearcoat:1.0, clearcoatRoughness:0.03,
+  envMapIntensity:0.0,
   reflectivity:0.95
 });
 
@@ -1118,63 +1179,32 @@ scene.add(groundMesh);
 function buildRoadSegment(){
   const grp = new THREE.Group();
 
-  // ── Road surface ─────────────────────────────────────
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_HALF*2, SEGMENT_LEN), roadMat);
+  // ── Road surface: pure black, no texture map, no z-fighting ──
+  // Using MeshBasicMaterial eliminates ALL lighting/shading artifacts on the road surface.
+  // Lane lines are painted INTO a single canvas texture on this one material — no 3D dash meshes.
+  const road = new THREE.Mesh(
+    new THREE.PlaneGeometry(ROAD_HALF*2, SEGMENT_LEN),
+    roadMat
+  );
   road.rotation.x = -Math.PI/2;
-  road.receiveShadow = true;
-  road.position.y = 0.001;
+  road.position.y = 0.0;
   grp.add(road);
 
-  // ── Shoulders ────────────────────────────────────────
-  for(const sx of [-ROAD_HALF - 0.7, ROAD_HALF + 0.7]){
-    const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.4, SEGMENT_LEN), shoulderMat);
+  // ── Shoulders (dark gray, flat) ───────────────────────────────
+  const shMat = new THREE.MeshBasicMaterial({color:0x111116});
+  for(const sx of [-ROAD_HALF - 0.9, ROAD_HALF + 0.9]){
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(1.8, SEGMENT_LEN), shMat);
     sh.rotation.x = -Math.PI/2;
-    sh.position.set(sx, 0.001, 0);
-    sh.receiveShadow = true;
+    sh.position.set(sx, 0.0, 0);
     grp.add(sh);
   }
 
-  // ── Rumble strips (edges) ─────────────────────────────
-  const rumbleMat = new THREE.MeshStandardMaterial({color:0x888888, roughness:0.88, metalness:0.0});
-  for(const sx of [-ROAD_HALF + 0.22, ROAD_HALF - 0.22]){
-    const r = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.012, SEGMENT_LEN), rumbleMat);
-    r.position.set(sx, 0.014, 0);
-    grp.add(r);
-  }
-
-  // ── Guardrail — single beam per side (no posts, saves ~140 draw calls per segment recycle) ──
-  const railMat = new THREE.MeshStandardMaterial({color:0xaabcaa, metalness:0.82, roughness:0.22});
-  for(const sx of [-ROAD_HALF - 1.30, ROAD_HALF + 1.30]){
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.22, SEGMENT_LEN), railMat);
-    rail.position.set(sx, 0.70, 0);
+  // ── Guardrail beams — sleek silver, no posts ──────────────────
+  const railMat2 = new THREE.MeshStandardMaterial({color:0xb0bcc0, metalness:0.88, roughness:0.18});
+  for(const sx of [-ROAD_HALF - 1.4, ROAD_HALF + 1.4]){
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.20, SEGMENT_LEN), railMat2);
+    rail.position.set(sx, 0.62, 0);
     grp.add(rail);
-    // Just 2 end-posts per segment instead of 5 — enough to sell the illusion at speed
-    for(const pz of [-SEGMENT_LEN * 0.48, SEGMENT_LEN * 0.48]){
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.10, 1.10, 0.10),
-        new THREE.MeshStandardMaterial({color:0x667777, metalness:0.60, roughness:0.45}));
-      post.position.set(sx, 0.55, pz);
-      grp.add(post);
-    }
-  }
-
-  // ── Lane dashes — white, standard highway spacing ─────
-  for(let l = 1; l < LANE_COUNT; l++){
-    const lx = -ROAD_HALF + l * LANE_WIDTH;
-    const dashCount = 4;
-    for(let d = 0; d < dashCount; d++){
-      const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 2.2), lineMat);
-      ln.rotation.x = -Math.PI/2;
-      ln.position.set(lx, 0.006, (-SEGMENT_LEN / 2) + (d + 0.5) * (SEGMENT_LEN / dashCount));
-      grp.add(ln);
-    }
-  }
-
-  // ── Edge lines (solid white) ──────────────────────────
-  for(const ex of [-ROAD_HALF + 0.12, ROAD_HALF - 0.12]){
-    const el = new THREE.Mesh(new THREE.PlaneGeometry(0.16, SEGMENT_LEN), edgeLineMat);
-    el.rotation.x = -Math.PI/2;
-    el.position.set(ex, 0.005, 0);
-    grp.add(el);
   }
 
   return grp;
@@ -3836,50 +3866,44 @@ let _lastTruckLane = 1;
 let _truckSpawnCount = 0;
 
 function spawnTruck(){
-  // Respect max truck count to keep draw calls bounded
-  const maxT = (QUALITY && QUALITY.maxTrucks) ? QUALITY.maxTrucks : 6;
+  const maxT = (QUALITY && QUALITY.maxTrucks) ? QUALITY.maxTrucks : 5;
   if(liveTrucks.length >= maxT) return;
 
   _truckSpawnCount++;
-  const densityMod = Math.min(1, G.miles / 80);
 
-  const zigzag = [0, 2, 1, 0, 2, 1, 2, 0, 1];
-  const lane = zigzag[_truckSpawnCount % zigzag.length];
+  // Pick a lane that differs from the last spawned truck — never block same lane twice in a row
+  let lane;
+  const lanes = [0,1,2];
+  const avoidLane = _lastTruckLane;
+  const freeLanes = lanes.filter(l => l !== avoidLane);
+  lane = freeLanes[_truckSpawnCount % freeLanes.length];
   _lastTruckLane = lane;
 
   const ch = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
-  const mesh = acquireTruck(ch);  // reuse from pool
-  const spawnZ = -62 - Math.random()*24;
+  const mesh = acquireTruck(ch);
+  // Always spawn far enough ahead that player has time to react
+  const spawnZ = -68 - Math.random()*20;
   mesh.position.set(laneX(lane), 0, spawnZ);
   mesh.rotation.y = Math.PI;
 
-  const spd = G.currentSpeed * (0.28 + Math.random()*0.18);
+  const spd = G.currentSpeed * (0.30 + Math.random()*0.16);
   liveTrucks.push({mesh, lane, speed:spd, passed:false, z:spawnZ});
 
-  // After 25 miles: occasional paired trucks
-  if(G.miles > 25 && liveTrucks.length < maxT && Math.random() < 0.28 + densityMod*0.22){
-    const lane2 = (lane + 1 + Math.floor(Math.random()*(LANE_COUNT-1))) % LANE_COUNT;
+  // After 40 miles: occasional pair — but ONLY if there’s room AND they’re in a DIFFERENT lane
+  // AND the second truck spawns 28+ units behind (never side-by-side)
+  const densityMod = Math.min(1, G.miles / 120);
+  if(G.miles > 40 && liveTrucks.length < maxT && Math.random() < 0.22 + densityMod*0.15){
+    // Second truck: must be in a different lane, staggered far behind
+    const otherLanes = lanes.filter(l => l !== lane);
+    const lane2 = otherLanes[Math.floor(Math.random()*otherLanes.length)];
     const ch2 = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
     const mesh2 = acquireTruck(ch2);
-    const staggerZ = spawnZ - (18 + Math.random()*10);
+    const staggerZ = spawnZ - (28 + Math.random()*18); // minimum 28 units gap
     mesh2.position.set(laneX(lane2), 0, staggerZ);
     mesh2.rotation.y = Math.PI;
-    liveTrucks.push({mesh:mesh2, lane:lane2, speed:G.currentSpeed*(0.28+Math.random()*0.18), passed:false, z:staggerZ});
+    liveTrucks.push({mesh:mesh2, lane:lane2, speed:G.currentSpeed*(0.28+Math.random()*0.16), passed:false, z:staggerZ});
   }
-
-  // After 80 miles: triple convoy (only if room)
-  if(G.miles > 80 && liveTrucks.length < maxT - 1 && Math.random() < 0.16 + densityMod*0.12){
-    for(let b=0; b<2; b++){
-      if(liveTrucks.length >= maxT) break;
-      const bl = (lane + b + 1) % LANE_COUNT;
-      const ch3 = TRUCK_COL_HEX[Math.floor(Math.random()*TRUCK_COL_HEX.length)];
-      const m3 = acquireTruck(ch3);
-      const bZ = spawnZ - (8 + b*14);
-      m3.position.set(laneX(bl), 0, bZ);
-      m3.rotation.y = Math.PI;
-      liveTrucks.push({mesh:m3, lane:bl, speed:G.currentSpeed*(0.28+Math.random()*0.12), passed:false, z:bZ});
-    }
-  }
+  // No triple convoy — ever. One clear path always exists.
 }
 // ─── SPAWN PICKUP ───
 const PICKUP_COLORS={nitro:0xff8800,shield:0x44aaff,slow:0x88ff88};
@@ -3950,7 +3974,8 @@ function update(dt){
   G.speed = Math.min(_maxSpd, G.baseSpeed + _speedGain);
 
   // Truck interval: tighter with miles, minimum 0.5s at 150+ miles
-  G.truckInterval = Math.max(0.50, 2.4 - G.miles * 0.012);
+  // Minimum 2.2s between spawns so player always has a clear path — never impossible
+  G.truckInterval = Math.max(2.2, 4.0 - G.miles * 0.012);
 
   // Pickup interval: more frequent as game progresses (player needs powerups)
   G.pickupInterval = Math.max(4.5, 9.0 - G.miles * 0.025);
@@ -4102,13 +4127,12 @@ function loop(ts){
     justP['ArrowLeft']=justP['ArrowRight']=justP['KeyA']=justP['KeyD']=justP['Space']=false;
     accumulator-=TICK;
   }
-  // UV-scroll asphalt texture — driven by G.currentSpeed * dt, matched to geometry
-  // repeat.set(3,8) over SEGMENT_LEN=40 → tile height = 5 world-units
-  // Must use same dt as geometry so texture tracks the road exactly
-  if(asphaltTex && gamePhase === 'playing'){
-    const _dz = G.currentSpeed * dt;
-    const _texTileH = SEGMENT_LEN / (asphaltTex.repeat.y > 0 ? asphaltTex.repeat.y : 6);
-    asphaltTex.offset.y -= _dz / _texTileH;
+  // UV-scroll road texture — use clamped dt (max 1 frame) to prevent line flash on slow frames
+  if(roadTex && gamePhase === 'playing'){
+    const safeDt = Math.min(dt, TICK * 2); // never jump more than 2 frames worth
+    const _dz = G.currentSpeed * safeDt;
+    const _texTileH = SEGMENT_LEN / (roadTex.repeat.y > 0 ? roadTex.repeat.y : 14);
+    roadTex.offset.y -= _dz / _texTileH;
   }
 
   // Post-processing render (bloom pass)
