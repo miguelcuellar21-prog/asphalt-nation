@@ -456,8 +456,8 @@ function detectQualityTier(){
   return 'low';
 }
 
-let _qualityTier = detectQualityTier();
-let QUALITY = QUALITY_PRESETS[_qualityTier];
+var qualityTier = detectQualityTier
+var QUALITY = QUALITY_PRESETS[qualityTier]
 console.log('Quality tier:', _qualityTier, QUALITY);
 
 // ─── Dynamic Resolution Scaling ───
@@ -673,8 +673,8 @@ function makeSkyGradient(topHex, botHex, midHex){
   return sky;
 }
 
-let skyMesh = makeSkyGradient(0x1a0818, 0x5a2808);
-scene.add(skyMesh);
+const pmrem = new THREE.PMREMGenerator(renderer)
+var skyScene, skyMesh, sunDisc, moonDiscscene.add(skyMesh);
 
 // Sun / moon disc
 const sunDiscGeo = new THREE.SphereGeometry(6, 12, 8);
