@@ -287,7 +287,9 @@ const ROAD_Z_SPEED_BASE = 22;
 const SEGMENT_LEN = 40;
 const SEGMENT_COUNT = 14;
 // SCENERY_ROWS driven by quality tier — do NOT hardcode
-const SCENERY_ROWS = (typeof QUALITY !== 'undefined' && QUALITY.sceneryRows) ? QUALITY.sceneryRows : 22;
+var qualityTier = detectQualityTier
+var QUALITY = QUALITY_PRESETS[qualityTier]
+console.log('Quality tier', qualityTier, QUALITY)
 const MILES_PER_STATE = 100;
 
 const POWERUP_TYPES = ['nitro','shield','slow'];
