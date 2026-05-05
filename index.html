@@ -388,79 +388,37 @@ const canvas = document.getElementById('c');
 // QUALITY PRESETS — Low / Medium / High
 // Auto-detect tier; user can override via settings
 // ═══════════════════════════════════════════════════
+// QUALITY PRESETS
 const QUALITY_PRESETS = {
-  low: {
-    pixelRatio: 1.0,
-    shadowMap: false,
-    shadowMapSize: 256,
-    bloomEnabled: false,
-    bloomStrength: 0.0,
+  LOW: {
+    carsPerMinute: 70,
     sceneryRows: 14,
-    asphaltTexSize: 256,
-    anisotropy: 1,
-    weatherParticles: 0,
-    physicallyCorrect: false,
-    maxTrucks: 4,
+    laneDetail: 0.7,
+    bloomStrength: 0.5,
+    maxParticles: 320,
+    shadows: false
   },
-  medium: {
-    pixelRatio: Math.min(devicePixelRatio, 2.0),
-    shadowMap: true,
-    shadowMapSize: 512,
-    bloomEnabled: true,
-    bloomStrength: 0.35,
+  MEDIUM: {
+    carsPerMinute: 95,
+    sceneryRows: 18,
+    laneDetail: 1,
+    bloomStrength: 0.7,
+    maxParticles: 480,
+    shadows: true
+  },
+  HIGH: {
+    carsPerMinute: 120,
     sceneryRows: 22,
-    asphaltTexSize: 512,
-    anisotropy: 4,
-    weatherParticles: 800,
-    physicallyCorrect: false,
-    maxTrucks: 6,
-  },
-  high: {
-    // Cap pixel ratio at 2.5 — DPR 3 on iPhone 14 Pro gives NO visual benefit
-    // over 2.5 but costs 44% more GPU fill rate. Shadow 1024 is sharp enough.
-    pixelRatio: Math.min(devicePixelRatio, 2.5),
-    shadowMap: true,
-    shadowMapSize: 1024,
-    bloomEnabled: true,
-    bloomStrength: 0.65,      // stronger bloom = headlights glow properly at night
-    sceneryRows: 26,
-    asphaltTexSize: 1024,
-    anisotropy: 8,
-    weatherParticles: 1600,
-    physicallyCorrect: false,
-    maxTrucks: 8,
-  },
-};
-
-// Auto-detect GPU tier
-function detectQualityTier(){
-  const dpr = window.devicePixelRatio || 1;
-  // navigator.deviceMemory is UNDEFINED on iOS Safari — never use it for iPhone detection
-  // Use a quick WebGL draw-call benchmark instead: render 1 frame and measure
-  const ua = navigator.userAgent || '';
-  const isApple = /iPhone|iPad|iPod/i.test(ua);
-  const isModernApple = isApple && /OS 1[5-9]_|OS [2-9]\d_/i.test(ua); // iOS 15+
-  const mem = navigator.deviceMemory; // undefined on iOS, real value on Android/Chrome
-
-  // iPhone 14 Pro and newer: DPR=3, iOS 16+ → always HIGH
-  if(isModernApple && dpr >= 3) return 'high';
-  // Older iPhone / iPad with DPR 2: medium
-  if(isApple && dpr >= 2) return 'medium';
-  // Android/Chrome: use deviceMemory if available
-  if(mem !== undefined){
-    if(dpr >= 2.5 && mem >= 6) return 'high';
-    if(dpr >= 2   && mem >= 3) return 'medium';
-    return 'low';
+    laneDetail: 1.2,
+    bloomStrength: 0.9,
+    maxParticles: 640,
+    shadows: true
   }
-  // Fallback: DPR-only
-  if(dpr >= 3) return 'high';
-  if(dpr >= 2) return 'medium';
-  return 'low';
 }
 
 var qualityTier = detectQualityTier
 var QUALITY = QUALITY_PRESETS[qualityTier]
-console.log('Quality tier:', _qualityTier, QUALITY);
+console.log('Quality tier', qualityTier, QUALITY)
 
 // ─── Dynamic Resolution Scaling ───
 let _drsLowFPSFrames  = 0;
