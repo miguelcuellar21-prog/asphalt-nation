@@ -633,9 +633,9 @@ function makeSkyGradient(topHex, botHex, midHex){
   return sky;
 }
 
+// PMREM / environment
 const pmrem = new THREE.PMREMGenerator(renderer)
-var skyScene, skyMesh, sunDisc, moonDiscscene.add(skyMesh);
-
+var skyScene, skyMesh, sunDisc, moonDisc
 // Sun / moon disc
 const sunDiscGeo = new THREE.SphereGeometry(6, 12, 8);
 const sunDiscMat = new THREE.MeshBasicMaterial({color:0xffdd88, fog:false});
